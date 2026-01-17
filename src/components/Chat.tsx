@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import MapView from './MapView';
 
 interface Event {
     id: string;
@@ -384,294 +385,318 @@ export default function Chat() {
     };
 
     return (
-        <div className="flex flex-col w-full max-w-4xl py-8 mx-auto">
-            {/* Chat Messages */}
-            <div className="space-y-4 mb-4">
-                {messages.length === 0 && (
-                    <div className="text-center text-gray-500 py-8">
-                        <h2 className="text-2xl font-bold text-gray-800 mb-2">🎫 Event Trip Planner</h2>
-                        <p>Tell me about an event or artist you want to see!</p>
-                        <p className="text-sm mt-2">Example: "I want to see Taylor Swift" or "Find Lakers games"</p>
-                    </div>
-                )}
-                {messages.map((m, index) => (
-                    <div key={index} className={`p-4 rounded-lg ${m.role === 'user' ? 'bg-blue-100 ml-8' : 'bg-white shadow mr-8'}`}>
-                        <div className="font-semibold text-sm text-gray-600 mb-1">
-                            {m.role === 'user' ? '👤 You' : '🤖 AI Assistant'}
-                        </div>
-                        <p className="whitespace-pre-wrap">{m.content}</p>
-                    </div>
-                ))}
-                <div ref={messagesEndRef} />
-            </div>
-
-            {/* Event Search Results */}
-            {isSearchingEvents && (
-                <div className="text-center py-4 text-gray-500">
-                    <div className="animate-pulse">🔍 Searching for events...</div>
-                </div>
-            )}
-
-            {!selectedEvent && !isSearchingEvents && hasSearchedEvents && events.length === 0 && (
-                <div className="text-center py-4 text-red-500 bg-red-50 rounded-lg border border-red-200 mb-4 animate-fadeIn">
-                    <p>❌ No events found matching your request.</p>
-                    <p className="text-sm text-gray-600 mt-1">Try a different artist name or city.</p>
-                </div>
-            )}
-
-            {events.length > 0 && (
-                <div className="mb-6">
-                    <h3 className="text-lg font-semibold mb-3 text-gray-700">
-                        🎭 Found {events.length} events - Select, then Double-click to Confirm:
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
-                        {events.map((event) => (
-                            <div
-                                key={event.id}
-                                onClick={() => handleEventSelect(event)}
-                                onDoubleClick={() => handleEventConfirm(event)}
-                                className={`bg-white rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 overflow-hidden ${highlightedEventId === event.id ? 'border-green-500 ring-2 ring-green-300 transform scale-[1.02]' : 'border-transparent hover:border-blue-500'
-                                    }`}
-                            >
-                                {event.image && (
-                                    <img src={event.image} alt={event.name} className="w-full h-32 object-cover" />
-                                )}
-                                <div className="p-3">
-                                    <h4 className="font-bold text-gray-800 truncate">{event.name}</h4>
-                                    <p className="text-sm text-gray-600">📅 {formatDate(event.date)}</p>
-                                    <p className="text-sm text-gray-600">📍 {event.venue}</p>
-                                    <p className="text-sm text-gray-500">{event.city}, {event.state}</p>
-                                    <p className="text-sm font-semibold text-green-600 mt-1">{event.priceRange}</p>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Places Search Results */}
-            {isSearchingPlaces && (
-                <div className="text-center py-4 text-gray-500">
-                    <div className="animate-pulse">🔍 Finding nearby restaurants & hotels...</div>
-                </div>
-            )}
-
-            {!isSearchingPlaces && hasSearchedPlaces && places.length === 0 && (
-                <div className="text-center py-4 text-red-500 bg-red-50 rounded-lg border border-red-200 mb-4">
-                    {selectedEvent && !selectedEvent.location ? (
-                        <p>⚠️ Cannot find places: The event venue is "TBD" and has no location yet.</p>
-                    ) : (
-                        <div>
-                            <p>❌ No places found matching your criteria.</p>
-                            <p className="text-sm text-gray-600 mt-1">Try increasing the radius or changing the filters.</p>
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {places.length > 0 && (
-                <div className="mb-6">
-                    {/* Persistent Filter Bar (Distance Only) */}
-                    <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 mb-4 flex flex-wrap gap-4 justify-between items-center shadow-sm">
-                        <div className="flex flex-wrap gap-3">
-                            <div className="flex items-center gap-1">
-                                <span className="text-xs font-bold text-gray-400">DIST:</span>
-                                <div className="flex bg-white rounded border border-gray-300 overflow-hidden">
-                                    {[8000, 16000, 32000].map((r) => (
-                                        <button
-                                            key={r}
-                                            onClick={() => setHotelFilters(prev => ({ ...prev, radius: r }))}
-                                            className={`px-2 py-1 text-xs font-bold ${hotelFilters.radius === r ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
-                                        >
-                                            {(r / 1600).toFixed(0)}m
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                        <button
-                            onClick={executeFilteredSearch}
-                            className="bg-gray-800 text-white text-xs px-3 py-1 rounded hover:bg-black transition-colors flex items-center gap-1"
-                        >
-                            🔄 Update Matches
-                        </button>
-                    </div>
-
-                    <h3 className="text-lg font-semibold mb-3 text-gray-700">
-                        🏨 Found {places.length} nearby places - Double-click to add to itinerary:
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
-                        {places.map((place) => {
-                            const isHotel = place.types?.includes('lodging') || place.types?.includes('hotel');
-                            return (
-                                <div
-                                    key={place.id}
-                                    onClick={() => handlePlaceSelect(place)}
-                                    onDoubleClick={() => handlePlaceConfirm(place)}
-                                    className={`bg-white rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 overflow-hidden ${selectedPlace?.id === place.id ? 'border-green-500 ring-2 ring-green-300 transform scale-[1.02]' : 'border-transparent hover:border-green-500'
-                                        }`}
-                                >
-                                    {place.photo && (
-                                        <img src={place.photo} alt={place.name} className="w-full h-32 object-cover" />
-                                    )}
-                                    {!place.photo && isHotel && (
-                                        <div className="w-full h-24 bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white text-4xl">
-                                            🏨
-                                        </div>
-                                    )}
-                                    <div className="p-3">
-                                        <h4 className="font-bold text-gray-800 truncate">{place.name}</h4>
-                                        <div className="flex items-center gap-2 text-sm flex-wrap mt-1">
-                                            {isHotel && place.rating > 0 && (
-                                                <span className="text-yellow-500 font-semibold tracking-wide">
-                                                    {'★'.repeat(Math.round(place.rating))}{'☆'.repeat(5 - Math.round(place.rating))}
-                                                    <span className="text-gray-400 font-normal ml-1">({place.rating})</span>
-                                                </span>
-                                            )}
-                                            {!isHotel && place.rating > 0 && (
-                                                <>
-                                                    <span className="text-yellow-500">⭐ {place.rating}</span>
-                                                    {place.userRatingsTotal > 0 && (
-                                                        <span className="text-gray-400">({place.userRatingsTotal})</span>
-                                                    )}
-                                                </>
-                                            )}
-                                        </div>
-
-                                        <p className="text-sm text-gray-600 truncate mt-1">📍 {place.address || 'Address N/A'}</p>
-
-                                        {isHotel && (
-                                            <a
-                                                href={`https://www.expedia.com/Hotel-Search?destination=${encodeURIComponent(place.name + ' ' + (place.address || ''))}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="mt-2 inline-block bg-blue-600 text-white text-xs px-2 py-1 rounded hover:bg-blue-700 transition-colors"
-                                                onClick={(e) => e.stopPropagation()}
-                                            >
-                                                Book on Expedia ↗
-                                            </a>
-                                        )}
-
-                                        {!isHotel && place.openNow !== undefined && (
-                                            <p className={`text-sm ${place.openNow ? 'text-green-600' : 'text-red-600'}`}>
-                                                {place.openNow ? '✓ Open now' : '✗ Closed'}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
-
-            {/* Itinerary */}
-            {(itinerary.length > 0 || selectedEvent) && (
-                <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
-                    <h3 className="font-bold text-purple-800 mb-3">📋 Your Itinerary</h3>
-                    <div className="space-y-2">
-                        {selectedEvent && (
-                            <div className="flex items-center gap-2 p-2 bg-white rounded border">
-                                <span className="text-lg">🎫</span>
-                                <div className="flex-1">
-                                    <p className="font-semibold text-sm">{selectedEvent.name}</p>
-                                    <p className="text-xs text-gray-500">{selectedEvent.venue}</p>
-                                </div>
+        <div className="flex flex-col lg:flex-row w-full h-screen bg-gray-50 overflow-hidden">
+            {/* LEFT PANEL: Chat & Itinerary (Scrollable) */}
+            <div className="w-full lg:w-1/2 h-full overflow-y-auto p-2 md:p-4 flex flex-col">
+                <div className="w-full h-full flex flex-col">
+                    {/* Chat Messages */}
+                    <div className="space-y-4 mb-4 flex-grow">
+                        {messages.length === 0 && (
+                            <div className="text-center text-gray-500 py-8">
+                                <h2 className="text-2xl font-bold text-gray-800 mb-2">🎫 Event Trip Planner</h2>
+                                <p>Tell me about an event or artist you want to see!</p>
+                                <p className="text-sm mt-2">Example: "I want to see Taylor Swift" or "Find Lakers games"</p>
                             </div>
                         )}
-                        {itinerary.map((item, idx) => (
-                            <div key={idx} className="flex items-center gap-2 p-2 bg-white rounded border">
-                                <span className="text-lg">{'rating' in item ? '🍽️' : '🏨'}</span>
-                                <div className="flex-1">
-                                    <p className="font-semibold text-sm">{item.name}</p>
-                                    <p className="text-xs text-gray-500">
-                                        {'rating' in item && `⭐ ${(item as Place).rating}`}
-                                    </p>
+                        {messages.map((m, index) => (
+                            <div key={index} className={`p-4 rounded-lg ${m.role === 'user' ? 'bg-blue-100 ml-auto max-w-[90%]' : 'bg-white shadow mr-auto max-w-[90%]'}`}>
+                                <div className="font-semibold text-sm text-gray-600 mb-1">
+                                    {m.role === 'user' ? '👤 You' : '🤖 AI Assistant'}
                                 </div>
-                                <button
-                                    onClick={() => removeFromItinerary(item.id)}
-                                    className="text-gray-400 hover:text-red-500 p-1"
-                                    title="Remove from itinerary"
-                                >
-                                    ✕
-                                </button>
+                                <p className="whitespace-pre-wrap">{m.content}</p>
                             </div>
                         ))}
+                        <div ref={messagesEndRef} />
                     </div>
-                </div>
-            )}
 
-            {/* Input Form & Confirmation Logic */}
-            <div className="sticky bottom-4 bg-white p-3 rounded-lg shadow-lg border border-gray-200">
-                {waitingForConfirmation === 'hotels' ? (
-                    <div className="flex flex-col items-center justify-center py-2 animate-fadeIn">
-                        <p className="mb-3 font-semibold text-gray-700">Would you like to search for hotels nearby?</p>
-                        <div className="flex gap-4">
-                            <button
-                                onClick={() => confirmHotels(true)}
-                                className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full font-bold transition-all transform hover:scale-105"
-                            >
-                                🏨 Yes, Find Hotels
-                            </button>
-                            <button
-                                onClick={() => confirmHotels(false)}
-                                className="bg-gray-400 hover:bg-gray-500 text-white px-6 py-2 rounded-full font-bold transition-all"
-                            >
-                                No, thanks
-                            </button>
+                    {/* Event Search Results */}
+                    {isSearchingEvents && (
+                        <div className="text-center py-4 text-gray-500">
+                            <div className="animate-pulse">🔍 Searching for events...</div>
                         </div>
-                    </div>
-                ) : waitingForConfirmation === 'hotels_filters' ? (
-                    <div className="bg-gray-50 p-4 rounded-lg animate-fadeIn border border-gray-200">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-gray-700">🏨 Hotel Preferences</h3>
-                            <button onClick={() => setWaitingForConfirmation(null)} className="text-gray-400 hover:text-gray-600">×</button>
-                        </div>
+                    )}
 
-                        <div className="space-y-4">
-                            {/* Distance Only */}
-                            <div>
-                                <label className="text-xs font-semibold text-gray-500 uppercase">Distance (Radius)</label>
-                                <div className="flex gap-2 mt-1">
-                                    {[8000, 16000, 32000].map((r) => (
-                                        <button
-                                            key={r}
-                                            onClick={() => setHotelFilters(prev => ({ ...prev, radius: r }))}
-                                            className={`flex-1 py-1 rounded text-sm font-bold border ${hotelFilters.radius === r ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'}`}
-                                        >
-                                            {(r / 1600).toFixed(0)} Miles
-                                        </button>
-                                    ))}
+                    {!selectedEvent && !isSearchingEvents && hasSearchedEvents && events.length === 0 && (
+                        <div className="text-center py-4 text-red-500 bg-red-50 rounded-lg border border-red-200 mb-4 animate-fadeIn">
+                            <p>❌ No events found matching your request.</p>
+                            <p className="text-sm text-gray-600 mt-1">Try a different artist name or city.</p>
+                        </div>
+                    )}
+
+                    {events.length > 0 && (
+                        <div className="mb-6">
+                            <h3 className="text-lg font-semibold mb-3 text-gray-700">
+                                🎭 Found {events.length} events - Select, then Double-click to Confirm:
+                            </h3>
+                            <div className="grid grid-cols-1 gap-4">
+                                {events.map((event) => (
+                                    <div
+                                        key={event.id}
+                                        onClick={() => handleEventSelect(event)}
+                                        onDoubleClick={() => handleEventConfirm(event)}
+                                        className={`bg-white rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 overflow-hidden flex flex-col sm:flex-row ${highlightedEventId === event.id ? 'border-green-500 ring-2 ring-green-300 transform scale-[1.01]' : 'border-transparent hover:border-blue-500'
+                                            }`}
+                                    >
+                                        {event.image && (
+                                            <img src={event.image} alt={event.name} className="w-full sm:w-32 h-32 object-cover" />
+                                        )}
+                                        <div className="p-3 flex-1 min-w-0">
+                                            <h4 className="font-bold text-gray-800 truncate">{event.name}</h4>
+                                            <p className="text-sm text-gray-600">📅 {formatDate(event.date)}</p>
+                                            <p className="text-sm text-gray-600">📍 {event.venue}</p>
+                                            <p className="text-sm text-gray-500 truncate">{event.city}, {event.state}</p>
+                                            <p className="text-sm font-semibold text-green-600 mt-1">{event.priceRange}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Places Search Results */}
+                    {isSearchingPlaces && (
+                        <div className="text-center py-4 text-gray-500">
+                            <div className="animate-pulse">🔍 Finding nearby restaurants & hotels...</div>
+                        </div>
+                    )}
+
+                    {!isSearchingPlaces && hasSearchedPlaces && places.length === 0 && (
+                        <div className="text-center py-4 text-red-500 bg-red-50 rounded-lg border border-red-200 mb-4">
+                            {selectedEvent && !selectedEvent.location ? (
+                                <p>⚠️ Cannot find places: The event venue is "TBD" and has no location yet.</p>
+                            ) : (
+                                <div>
+                                    <p>❌ No places found matching your criteria.</p>
+                                    <p className="text-sm text-gray-600 mt-1">Try increasing the radius or changing the filters.</p>
                                 </div>
+                            )}
+                        </div>
+                    )}
+
+                    {places.length > 0 && (
+                        <div className="mb-6">
+                            {/* Persistent Filter Bar (Distance Only) */}
+                            <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 mb-4 flex flex-wrap gap-4 justify-between items-center shadow-sm">
+                                <div className="flex flex-wrap gap-3">
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-xs font-bold text-gray-400">DIST:</span>
+                                        <div className="flex bg-white rounded border border-gray-300 overflow-hidden">
+                                            {[8000, 16000, 32000].map((r) => (
+                                                <button
+                                                    key={r}
+                                                    onClick={() => setHotelFilters(prev => ({ ...prev, radius: r }))}
+                                                    className={`px-2 py-1 text-xs font-bold ${hotelFilters.radius === r ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                                                >
+                                                    {(r / 1600).toFixed(0)}m
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={executeFilteredSearch}
+                                    className="bg-gray-800 text-white text-xs px-3 py-1 rounded hover:bg-black transition-colors flex items-center gap-1"
+                                >
+                                    🔄 Update Matches
+                                </button>
                             </div>
 
-                            <button
-                                onClick={executeFilteredSearch}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold shadow-md transform active:scale-95 transition-all mt-2"
-                            >
-                                🔍 Search Hotels
-                            </button>
+                            <h3 className="text-lg font-semibold mb-3 text-gray-700">
+                                🏨 Found {places.length} nearby places:
+                            </h3>
+                            <div className="grid grid-cols-1 gap-4">
+                                {places.map((place) => {
+                                    const isHotel = place.types?.includes('lodging') || place.types?.includes('hotel');
+                                    return (
+                                        <div
+                                            key={place.id}
+                                            onClick={() => handlePlaceSelect(place)}
+                                            onDoubleClick={() => handlePlaceConfirm(place)}
+                                            className={`bg-white rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 overflow-hidden flex flex-col sm:flex-row ${selectedPlace?.id === place.id ? 'border-green-500 ring-2 ring-green-300 transform scale-[1.01]' : 'border-transparent hover:border-green-500'
+                                                }`}
+                                        >
+                                            {place.photo && (
+                                                <img src={place.photo} alt={place.name} className="w-full sm:w-32 h-32 object-cover" />
+                                            )}
+                                            {!place.photo && isHotel && (
+                                                <div className="w-full sm:w-32 h-32 bg-gray-200 flex items-center justify-center text-4xl">
+                                                    🏨
+                                                </div>
+                                            )}
+                                            <div className="p-3 flex-1 min-w-0">
+                                                <h4 className="font-bold text-gray-800 truncate">{place.name}</h4>
+                                                <div className="flex items-center gap-2 text-sm flex-wrap mt-1">
+                                                    {isHotel && place.rating > 0 && (
+                                                        <span className="text-yellow-500 font-semibold tracking-wide">
+                                                            {'★'.repeat(Math.round(place.rating))}{'☆'.repeat(5 - Math.round(place.rating))}
+                                                            <span className="text-gray-400 font-normal ml-1">({place.rating})</span>
+                                                        </span>
+                                                    )}
+                                                    {!isHotel && place.rating > 0 && (
+                                                        <>
+                                                            <span className="text-yellow-500">⭐ {place.rating}</span>
+                                                            {place.userRatingsTotal > 0 && (
+                                                                <span className="text-gray-400">({place.userRatingsTotal})</span>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </div>
+
+                                                <p className="text-sm text-gray-600 truncate mt-1">📍 {place.address || 'Address N/A'}</p>
+
+                                                {isHotel && (
+                                                    <a
+                                                        href={`https://www.expedia.com/Hotel-Search?destination=${encodeURIComponent(place.name + ' ' + (place.address || ''))}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="mt-2 inline-block bg-blue-600 text-white text-xs px-2 py-1 rounded hover:bg-blue-700 transition-colors"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        Book on Expedia ↗
+                                                    </a>
+                                                )}
+
+                                                {!isHotel && place.openNow !== undefined && (
+                                                    <p className={`text-sm ${place.openNow ? 'text-green-600' : 'text-red-600'}`}>
+                                                        {place.openNow ? '✓ Open now' : '✗ Closed'}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
+                    )}
+
+                    {/* Itinerary */}
+                    {(itinerary.length > 0 || selectedEvent) && (
+                        <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                            <h3 className="font-bold text-purple-800 mb-3">📋 Your Itinerary</h3>
+                            <div className="space-y-2">
+                                {selectedEvent && (
+                                    <div className="flex items-center gap-2 p-2 bg-white rounded border">
+                                        <span className="text-lg">🎫</span>
+                                        <div className="flex-1">
+                                            <p className="font-semibold text-sm">{selectedEvent.name}</p>
+                                            <p className="text-xs text-gray-500">{selectedEvent.venue}</p>
+                                        </div>
+                                    </div>
+                                )}
+                                {itinerary.map((item, idx) => (
+                                    <div key={idx} className="flex items-center gap-2 p-2 bg-white rounded border">
+                                        <span className="text-lg">{'rating' in item ? '🍽️' : '🏨'}</span>
+                                        <div className="flex-1">
+                                            <p className="font-semibold text-sm">{item.name}</p>
+                                            <p className="text-xs text-gray-500">
+                                                {'rating' in item && `⭐ ${(item as Place).rating}`}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => removeFromItinerary(item.id)}
+                                            className="text-gray-400 hover:text-red-500 p-1"
+                                            title="Remove from itinerary"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Input Area (Sticky Bottom on Mobile) */}
+                    <div className="sticky bottom-0 bg-white pt-2 pb-4 border-t border-gray-200 mt-auto">
+                        {waitingForConfirmation === 'hotels' ? (
+                            <div className="flex flex-col items-center justify-center py-2 animate-fadeIn bg-gray-50 rounded-lg border border-gray-200 p-4">
+                                <p className="mb-3 font-semibold text-gray-700">Would you like to search for hotels nearby?</p>
+                                <div className="flex gap-4">
+                                    <button
+                                        onClick={() => confirmHotels(true)}
+                                        className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full font-bold transition-all transform hover:scale-105"
+                                    >
+                                        🏨 Yes, Find Hotels
+                                    </button>
+                                    <button
+                                        onClick={() => confirmHotels(false)}
+                                        className="bg-gray-400 hover:bg-gray-500 text-white px-6 py-2 rounded-full font-bold transition-all"
+                                    >
+                                        No, thanks
+                                    </button>
+                                </div>
+                            </div>
+                        ) : waitingForConfirmation === 'hotels_filters' ? (
+                            <div className="bg-gray-50 p-4 rounded-lg animate-fadeIn border border-gray-200">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="font-bold text-gray-700">🏨 Hotel Preferences</h3>
+                                    <button onClick={() => setWaitingForConfirmation(null)} className="text-gray-400 hover:text-gray-600">×</button>
+                                </div>
+
+                                <div className="space-y-4">
+                                    {/* Distance Only */}
+                                    <div>
+                                        <label className="text-xs font-semibold text-gray-500 uppercase">Distance (Radius)</label>
+                                        <div className="flex gap-2 mt-1">
+                                            {[8000, 16000, 32000].map((r) => (
+                                                <button
+                                                    key={r}
+                                                    onClick={() => setHotelFilters(prev => ({ ...prev, radius: r }))}
+                                                    className={`flex-1 py-1 rounded text-sm font-bold border ${hotelFilters.radius === r ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'}`}
+                                                >
+                                                    {(r / 1600).toFixed(0)} Miles
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        onClick={executeFilteredSearch}
+                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold shadow-md transform active:scale-95 transition-all mt-2"
+                                    >
+                                        🔍 Search Hotels
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <form onSubmit={handleSubmit} className="flex gap-2">
+                                <input
+                                    className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                    value={input}
+                                    placeholder="Chat (e.g., 'Find hotels')..."
+                                    onChange={(e) => setInput(e.target.value)}
+                                    disabled={isLoading}
+                                    autoFocus
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={isLoading || !input.trim()}
+                                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors shadow-sm font-semibold"
+                                >
+                                    {isLoading ? '...' : 'Send'}
+                                </button>
+                            </form>
+                        )}
                     </div>
-                ) : (
-                    <form onSubmit={handleSubmit} className="flex gap-2">
-                        <input
-                            className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={input}
-                            placeholder="Chat or ask about an event (e.g., 'I want to see Taylor Swift')..."
-                            onChange={(e) => setInput(e.target.value)}
-                            disabled={isLoading}
-                        />
-                        <button
-                            type="submit"
-                            disabled={isLoading || !input.trim()}
-                            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                        >
-                            {isLoading ? '...' : 'Send'}
-                        </button>
-                    </form>
-                )}
+                </div>
             </div>
+
+            {/* RIGHT PANEL: Map View (Sticky/Fixed on Desktop) */}
+            <div className="hidden lg:block w-1/2 h-full bg-gray-200 border-l border-gray-300 relative">
+                <MapView
+                    events={events}
+                    places={places}
+                    selectedEvent={selectedEvent}
+                    selectedPlace={selectedPlace}
+                    itinerary={itinerary}
+                    onSelectPlace={handlePlaceSelect}
+                />
+            </div>
+
+            {/* Mobile View Toggle (Optional - For now map is hidden on mobile or stacked if we change hidden lg:block) */}
+            {/* For this request, we'll keep it specific: Chat Left, Map Right. On mobile, let's stack them or keep map accessible.
+                For now I'll make the map visible on mobile below the chat if needed, but the user requested "chat left, map right".
+                "hidden lg:block" hides it on mobile. Let's make it visible on mobile but stacked.
+            */}
         </div>
     );
 }
