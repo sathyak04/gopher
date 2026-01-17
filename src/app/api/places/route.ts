@@ -9,6 +9,8 @@ export async function GET(req: NextRequest) {
     const minRating = parseFloat(searchParams.get('minRating') || '0');
     const maxPrice = parseInt(searchParams.get('maxPrice') || '4'); // 1-4 scale
 
+    const keyword = searchParams.get('keyword') || '';
+
     if (!lat || !lng) {
         return NextResponse.json({ error: 'Missing lat/lng parameters' }, { status: 400 });
     }
@@ -20,7 +22,11 @@ export async function GET(req: NextRequest) {
 
     try {
         // Use Google Places Nearby Search
-        const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=${type}&key=${apiKey}`;
+        let url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=${type}&key=${apiKey}`;
+
+        if (keyword) {
+            url += `&keyword=${encodeURIComponent(keyword)}`;
+        }
 
         console.log('Places API request URL:', url.replace(apiKey, 'API_KEY_HIDDEN'));
 

@@ -91,23 +91,33 @@ export default function MapView({
                 color = '#EF4444'; // Red
             }
             if (type === 'itinerary') {
-                color = '#581c87'; // Dark Purple
+                color = '#EF4444'; // Red (User Request: "thing on the itinerary should all be red")
             }
             if (isSelected) {
                 color = '#22C55E'; // Green
             }
 
-            // SVG Path for a Pin with a hole
+            // SVG Paths
             const pinPath = "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z";
+            const foodPath = "M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"; // Fork & Knife
+            const hotelPath = "M7 13c1.66 0 3-1.34 3-3S8.66 7 7 7s-3 1.34-3 3 1.34 3 3 3zm12-6h-8v7H3V5H1v15h2v-3h18v3h2v-9c0-2.21-1.79-4-4-4z"; // Bed
+
+            // Determine Path based on Type
+            let path = pinPath;
+            if (item.types && (item.types.includes('restaurant') || item.types.includes('food') || item.types.includes('meal_takeaway'))) {
+                path = foodPath;
+            } else if (item.types && (item.types.includes('lodging') || item.types.includes('hotel'))) {
+                path = hotelPath;
+            }
 
             const icon: google.maps.Symbol = {
-                path: pinPath,
+                path: path,
                 fillColor: color,
                 fillOpacity: 1,
                 strokeWeight: 1,
                 strokeColor: '#FFFFFF',
-                anchor: new google.maps.Point(12, 22), // Tip of the pin (approx)
-                scale: isSelected ? 2.5 : 1.8, // Scale up SVG
+                anchor: path === pinPath ? new google.maps.Point(12, 22) : new google.maps.Point(12, 12), // Adjust anchor for square icons
+                scale: isSelected ? 1.5 : 1.2, // Slightly smaller scale for complex icons
             };
 
             const marker = new google.maps.Marker({
