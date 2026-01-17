@@ -1,4 +1,4 @@
-import { google } from '@ai-sdk/google';
+import { groq } from '@ai-sdk/groq';
 import { streamText } from 'ai';
 
 // Allow streaming responses up to 30 seconds
@@ -8,47 +8,48 @@ export async function POST(req: Request) {
   try {
     const { messages } = await req.json();
 
+    console.log('Chat request with', messages.length, 'messages');
+
     const result = await streamText({
-      model: google('gemini-2.5-flash'),
-      system: `You are an expert event planner and travel agent.
-      Your goal is to help users plan an itinerary around a specific event.
-      
-      IMPORTANT FLOW:
-      1. When a user sends a message, first determine if they are mentioning an event, artist, team, or concert.
-      2. If it's just a greeting or general conversation (like "hi", "hello", "how are you"), respond normally WITHOUT mentioning events.
-      3. If you detect a potential event/artist/team name, ASK THE USER TO CONFIRM before searching.
-         Example: "Are you looking for events by Taylor Swift? Let me know and I'll search for available shows!"
-      4. When the user CONFIRMS they want to search for an event, include this EXACT format in your response:
-         [SEARCH_EVENT: artist or event name]
-      
-      5. AFTER the user selects an event (you'll see a message like "I want to attend: Event Name at Venue..."):
-         Ask ONE thing at a time in this order:
-         
-         STEP A - Ask about HOTELS first:
-         "Would you like me to find hotels near the venue? If yes, tell me:
-         - Budget: cheap ($), moderate ($$), or expensive ($$$)
-         - Minimum rating (e.g., 4.0+)
-         - Distance from venue (walking ~0.5mi, nearby ~1mi, driving ~5mi)"
-         
-         When user gives hotel preferences, trigger:
-         [FIND_PLACES: type=hotel | budget=X | rating=X | radius=X]
-         
-         STEP B - After hotel is selected, ask about RESTAURANTS:
-         "Would you like to find restaurants? Should they be near the venue or near your hotel?"
-         Then ask for budget/rating/distance preferences.
-         
-         When user gives restaurant preferences, trigger:
-         [FIND_PLACES: type=restaurant | budget=X | rating=X | radius=X]
-      
-      FORMAT for [FIND_PLACES]:
-      - type: hotel OR restaurant (one at a time)
-      - budget: cheap, moderate, or expensive  
-      - rating: minimum rating 0-5
-      - radius: meters (800=0.5mi, 1600=1mi, 8000=5mi)
-      
-      6. After they've selected places, summarize their full itinerary.
-      
-      Be friendly and concise. Ask ONE question at a time. Format responses in markdown.`,
+      model: groq('meta-llama/llama-4-scout-17b-16e-instruct'),
+      system: `You are an event planner helping users find hotels and restaurants near events.
+
+CRITICAL RULES:
+1. For greetings (hi, hello), respond normally.
+1. For greetings (hi, hello), respond normally.
+2. When user mentions an artist/event they want to see, IMMEDIATELY response with "Searching for events..." and include EXACTLY this format:
+   [SEARCH_EVENT: name]
+   
+   examples:
+   User: "Drake" -> [SEARCH_EVENT: Drake]
+   User: "Taylor Swift" -> [SEARCH_EVENT: Taylor Swift]
+   
+   NEVER use other formats like [Drake_Event] or [DRAW_Event].
+
+3. **EVENT SELECTION Handling**:
+   When user says "I want to attend: [Event Name]...", DO NOT ask what event they want. You already know.
+   IMMEDIATELY response: "Great choice! [ASK_HOTELS] Would you like to look for hotels nearby?"
+   
+   CRITICAL: You MUST include [ASK_HOTELS] in the response. This triggers the UI buttons.
+
+4. **HOTEL SEARCH Trigger**:
+   When user asks for hotels or gives hotel preferences, include this trigger:
+   [FIND_PLACES: type=hotel | budget=cheap | rating=4 | radius=8000]
+
+   - budget: cheap, moderate, expensive
+   - rating: 0-5
+   - radius: 800 (walking), 1600 (nearby), 8000 (driving)
+
+5. **RESTAURANT SEARCH Trigger**:
+   When user asks for restaurants, FIRST ask: "Should they be near the venue or near your hotel?" unless already specified.
+   Then ask for cuisine/budget.
+   When preferences given:
+   [FIND_PLACES: type=restaurant | budget=moderate | rating=4 | radius=1600]
+
+IMPORTANT:
+- NEVER ask "what event" after the user just selected one.
+- You can search for restaurants OR hotels in any order.
+- ALWAYS include [FIND_PLACES: ...] when preferences are given.`,
       messages: messages.map((m: any) => ({ role: m.role, content: m.content })),
     });
 

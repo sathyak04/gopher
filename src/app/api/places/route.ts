@@ -22,12 +22,21 @@ export async function GET(req: NextRequest) {
         // Use Google Places Nearby Search
         const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=${type}&key=${apiKey}`;
 
+        console.log('Places API request URL:', url.replace(apiKey, 'API_KEY_HIDDEN'));
+
         const response = await fetch(url);
         const data = await response.json();
 
+        console.log('Places API response status:', data.status);
+        console.log('Places API results count:', data.results?.length || 0);
+
         if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-            console.error('Google Places API error:', data);
-            return NextResponse.json({ error: `Places API error: ${data.status}` }, { status: 500 });
+            console.error('Google Places API error:', JSON.stringify(data, null, 2));
+            return NextResponse.json({
+                error: `Places API error: ${data.status}`,
+                message: data.error_message || 'Unknown error',
+                details: data
+            }, { status: 500 });
         }
 
         // Filter and transform results
