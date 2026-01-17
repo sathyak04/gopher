@@ -1,0 +1,7 @@
+src/app/api/chat/route.ts(2,22): error TS2724: '"ai"' has no exported member named 'convertToCoreMessages'. Did you mean 'convertToModelMessages'?
+src/app/api/chat/route.ts(26,17): error TS2551: Property 'toDataStreamResponse' does not exist on type 'StreamTextResult<ToolSet, Output<string, string, never>>'. Did you mean 'toTextStreamResponse'?
+src/components/Chat.tsx(8,23): error TS2339: Property 'input' does not exist on type 'UseChatHelpers<UIMessage<unknown, UIDataTypes, UITools>>'.
+src/components/Chat.tsx(8,30): error TS2339: Property 'handleInputChange' does not exist on type 'UseChatHelpers<UIMessage<unknown, UIDataTypes, UITools>>'.
+src/components/Chat.tsx(8,49): error TS2339: Property 'handleSubmit' does not exist on type 'UseChatHelpers<UIMessage<unknown, UIDataTypes, UITools>>'.
+src/components/Chat.tsx(8,63): error TS2339: Property 'isLoading' does not exist on type 'UseChatHelpers<UIMessage<unknown, UIDataTypes, UITools>>'.
+src/components/Chat.tsx(39,81): error TS2339: Property 'content' does not exist on type 'UIMessage<unknown, UIDataTypes, UITools>'.
