@@ -40,10 +40,11 @@ export default function Chat() {
     const [hasSearchedEvents, setHasSearchedEvents] = useState(false);
     const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
     const [places, setPlaces] = useState<Place[]>([]);
+    const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
     const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
     const [hasSearchedPlaces, setHasSearchedPlaces] = useState(false);
-    const [waitingForConfirmation, setWaitingForConfirmation] = useState<'hotels' | 'hotels_filters' | null>(null);
-    const [hotelFilters, setHotelFilters] = useState({ budget: 'moderate', radius: 8000, rating: 3 });
+    const [waitingForConfirmation, setWaitingForConfirmation] = useState<'event' | 'hotels' | 'hotels_filters' | null>(null);
+    const [hotelFilters, setHotelFilters] = useState({ radius: 8000 });
     const [itinerary, setItinerary] = useState<Array<Event | Place>>([]);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -92,114 +93,43 @@ export default function Chat() {
         }
     };
 
-    const searchPlaces = async (params: { type: string; budget: string; rating: number; radius: number }) => {
+    const searchPlaces = async (params: { type: string; radius: number }) => {
         setIsSearchingPlaces(true);
         setHasSearchedPlaces(false);
 
         if (!selectedEvent?.location) {
-            console.warn('No event location available - Venue likely TBD');
+            console.warn('Cannot search places: No event location available');
             setIsSearchingPlaces(false);
-            setHasSearchedPlaces(true); // Triggers the "Venue TBD" warning in UI
             return;
         }
+
+        setPlaces([]);
+        setHasSearchedPlaces(false);
         try {
-            const maxPrice = params.budget === 'cheap' ? 1 : params.budget === 'moderate' ? 2 : 4;
             const types = params.type.split(',').map(t => t.trim());
             const allPlaces: Place[] = [];
 
             for (const placeType of types) {
-                // Unified Google Places Search (Hotels & Restaurants) with Price Estimates
+                // Unified Google Places Search (Hotels & Restaurants)
+                // Google Places uses 'lodging' for hotels
                 const apiType = placeType === 'hotel' ? 'lodging' : 'restaurant';
 
-                const url = `/api/places?lat=${selectedEvent.location.lat}&lng=${selectedEvent.location.lng}&type=${apiType}&radius=${params.radius}&minRating=${params.rating}&maxPrice=${maxPrice}`;
+                const url = `/api/places?lat=${selectedEvent.location.lat}&lng=${selectedEvent.location.lng}&type=${apiType}&radius=${params.radius}&minRating=0`;
 
                 console.log(`Searching Google Places for ${apiType}...`);
                 const response = await fetch(url);
                 const data = await response.json();
 
                 if (data.places) {
-                    // Enrich with price estimates based on Google Price Level
-                    const enrichedPlaces = data.places.map((p: any) => ({
+                    // Enrich with price label if needed (optional)
+                    const googlePlaces = data.places.map((p: any) => ({
                         ...p,
-                        priceLabel: p.priceLevel !== undefined
-                            ? `${p.priceLabel} (${getPriceEstimate(p.priceLevel, placeType)})`
-                            : 'Price varies'
+                        // Ensure photo and address are mapped correctly by the API response
+                        // But we can add extra defaults here if needed
                     }));
-                    allPlaces.push(...enrichedPlaces);
+                    allPlaces.push(...googlePlaces);
                 }
             }
-
-            setPlaces(allPlaces);
-        } catch (error) {
-            console.error('Error searching places:', error);
-            setPlaces([]);
-        } finally {
-            setIsSearchingPlaces(false);
-            setHasSearchedPlaces(true);
-        }
-    };
-
-    const searchPlacesOld = async (params: { type: string; budget: string; rating: number; radius: number }) => {
-        if (!selectedEvent?.location) {
-            console.error('No event location available');
-            return;
-        }
-
-        setIsSearchingPlaces(true);
-        setHasSearchedPlaces(false);
-        try {
-            const maxPrice = params.budget === 'cheap' ? 1 : params.budget === 'moderate' ? 2 : 4;
-            const types = params.type.split(',').map(t => t.trim());
-            const allPlaces: Place[] = [];
-
-            for (const placeType of types) {
-                if (placeType === 'hotel') {
-                    // Use Amadeus API for hotels (real prices)
-                    const radiusKm = Math.round(params.radius / 1000); // Convert meters to km
-                    const url = `/api/hotels?lat=${selectedEvent.location.lat}&lng=${selectedEvent.location.lng}&radius=${radiusKm}`;
-
-                    console.log('Fetching hotels from Amadeus...');
-                    const response = await fetch(url);
-                    const data = await response.json();
-
-                    if (data.hotels && data.hotels.length > 0) {
-                        // Transform Amadeus hotels to our Place format
-                        const hotels: Place[] = data.hotels.map((h: any) => ({
-                            id: h.id,
-                            name: h.name,
-                            address: h.address || h.city || '',
-                            rating: h.rating || 0,
-                            userRatingsTotal: 0,
-                            priceLevel: h.price ? Math.ceil(h.price / 100) : undefined,
-                            priceLabel: h.priceLabel || 'Price N/A',
-                            types: ['hotel'],
-                            location: h.location || { lat: 0, lng: 0 },
-                            photo: null,
-                            openNow: true,
-                        }));
-                        allPlaces.push(...hotels);
-                    } else {
-                        console.log('Amadeus returned no hotels, falling back to Google Places...');
-                        const googleUrl = `/api/places?lat=${selectedEvent.location.lat}&lng=${selectedEvent.location.lng}&type=lodging&radius=${params.radius}&minRating=${params.rating}&maxPrice=${maxPrice}`;
-                        const gResponse = await fetch(googleUrl);
-                        const gData = await gResponse.json();
-                        if (gData.places) {
-                            allPlaces.push(...gData.places);
-                        }
-                    }
-                } else {
-                    // Use Google Places for restaurants
-                    const url = `/api/places?lat=${selectedEvent.location.lat}&lng=${selectedEvent.location.lng}&type=restaurant&radius=${params.radius}&minRating=${params.rating}&maxPrice=${maxPrice}`;
-
-                    const response = await fetch(url);
-                    const data = await response.json();
-
-                    if (data.places) {
-                        allPlaces.push(...data.places);
-                    }
-                }
-            }
-
             setPlaces(allPlaces);
         } catch (error) {
             console.error('Error searching places:', error);
@@ -222,14 +152,12 @@ export default function Chat() {
             }
 
             const paramsStr = placesMatch[1];
-            const params: any = { type: 'restaurant', budget: 'moderate', rating: 0, radius: 1500 };
+            const params: any = { type: 'restaurant', radius: 1500 };
 
             // Parse parameters
             paramsStr.split('|').forEach(part => {
                 const [key, value] = part.split('=').map(s => s.trim());
                 if (key === 'type') params.type = value;
-                if (key === 'budget') params.budget = value;
-                if (key === 'rating') params.rating = parseFloat(value) || 0;
                 if (key === 'radius') params.radius = parseInt(value) || 1500;
             });
 
@@ -260,9 +188,20 @@ export default function Chat() {
         return false;
     };
 
+    // Check for [CONFIRM_EVENT] trigger
+    const checkForConfirmTrigger = (text: string) => {
+        if (text.includes('[CONFIRM_EVENT]')) {
+            setWaitingForConfirmation('event');
+            return true;
+        }
+        return false;
+    };
+
     // Clean the search triggers from display text
     const cleanDisplayText = (text: string) => {
         return text
+            .replace(/\[SEARCH_EVENT:\s*.+?\]/gi, '')
+            .replace(/\[FIND_PLACES:\s*.+?\]/gi, '')
             .replace(/\[SEARCH_EVENT:\s*.+?\]/gi, '')
             .replace(/\[FIND_PLACES:\s*.+?\]/gi, '')
             .replace(/\[ASK_HOTELS\]/gi, '')
@@ -270,13 +209,22 @@ export default function Chat() {
     };
 
 
+    const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
+
+    // ... (existing code)
+
     const handleEventSelect = (event: Event) => {
-        console.log('Selected event:', event);
-        console.log('Event location:', event.location);
+        setHighlightedEventId(event.id);
+        // Visual highlight only, do not set selectedEvent yet
+    };
+
+    const handleEventConfirm = (event: Event) => {
+        console.log('Confirmed event:', event);
         setSelectedEvent(event);
-        setEvents([]);
-        setPlaces([]); // Clear any previous places
-        setWaitingForConfirmation(null); // Clear any pending confirmations
+        setHighlightedEventId(null);
+        setEvents([]); // Hide list
+        setPlaces([]);
+        setWaitingForConfirmation(null);
 
         const eventMessage = {
             role: 'user',
@@ -289,8 +237,13 @@ export default function Chat() {
     };
 
     const handlePlaceSelect = (place: Place) => {
+        setSelectedPlace(place);
+    };
+
+    const handlePlaceConfirm = (place: Place) => {
         // Add to itinerary
         setItinerary(prev => [...prev, place]);
+        setSelectedPlace(null);
 
         // Remove from places list
         setPlaces(prev => prev.filter(p => p.id !== place.id));
@@ -298,12 +251,16 @@ export default function Chat() {
         // Let AI know
         const placeMessage = {
             role: 'user',
-            content: `I'd like to add ${place.name} (${place.priceLabel}, ${place.rating}⭐) to my itinerary.`
+            content: `I'd like to add ${place.name} to my itinerary.`
         };
 
         const newMessages = [...messages, placeMessage];
         setMessages(newMessages);
         sendToAI(newMessages);
+    };
+
+    const removeFromItinerary = (id: string) => {
+        setItinerary(prev => prev.filter(item => item.id !== id));
     };
 
     const sendToAI = async (messagesToSend: Array<{ role: string, content: string }>) => {
@@ -351,6 +308,10 @@ export default function Chat() {
                         askHotelsTriggered = true;
                     }
                 }
+                if (!checkForConfirmTrigger(fullResponse)) {
+                    // Just check, no need for complex flag if we just rely on state
+                    // logic is handled inside the function
+                }
 
                 assistantMessage.content = cleanDisplayText(fullResponse);
 
@@ -384,17 +345,16 @@ export default function Chat() {
 
         setMessages(newMessages);
         setInput('');
-        setEvents([]);
-
         sendToAI(newMessages);
     };
 
     const confirmHotels = (confirmed: boolean) => {
         if (confirmed) {
             setWaitingForConfirmation('hotels_filters');
+            // handleQuickReply("Yes, please find hotels."); // Optional: Don't send message, just verify filters
         } else {
             setWaitingForConfirmation(null);
-            handleQuickReply("No, I'll search for something else.");
+            handleQuickReply("No, I'm good on hotels.");
         }
     };
 
@@ -402,15 +362,13 @@ export default function Chat() {
         setWaitingForConfirmation(null);
 
         // Add User Message for context
-        const filterMsg = `Searching for hotels: ${hotelFilters.budget === 'cheap' ? '$' : hotelFilters.budget === 'moderate' ? '$$' : '$$$'}, ${(hotelFilters.radius / 1600).toFixed(0)} mi, ${hotelFilters.rating}+ stars`;
+        const filterMsg = `Searching for hotels: ${(hotelFilters.radius / 1600).toFixed(0)} mi radius`;
         const userMessage = { role: 'user', content: filterMsg };
         setMessages(prev => [...prev, userMessage]);
 
         // Trigger Search Directly
         searchPlaces({
             type: 'hotel',
-            budget: hotelFilters.budget,
-            rating: hotelFilters.rating,
             radius: hotelFilters.radius
         });
     };
@@ -464,14 +422,16 @@ export default function Chat() {
             {events.length > 0 && (
                 <div className="mb-6">
                     <h3 className="text-lg font-semibold mb-3 text-gray-700">
-                        🎭 Found {events.length} events - Click one to plan your trip:
+                        🎭 Found {events.length} events - Select, then Double-click to Confirm:
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
                         {events.map((event) => (
                             <div
                                 key={event.id}
                                 onClick={() => handleEventSelect(event)}
-                                className="bg-white rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 border-transparent hover:border-blue-500 overflow-hidden"
+                                onDoubleClick={() => handleEventConfirm(event)}
+                                className={`bg-white rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 overflow-hidden ${highlightedEventId === event.id ? 'border-green-500 ring-2 ring-green-300 transform scale-[1.02]' : 'border-transparent hover:border-blue-500'
+                                    }`}
                             >
                                 {event.image && (
                                     <img src={event.image} alt={event.name} className="w-full h-32 object-cover" />
@@ -511,17 +471,45 @@ export default function Chat() {
 
             {places.length > 0 && (
                 <div className="mb-6">
+                    {/* Persistent Filter Bar (Distance Only) */}
+                    <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 mb-4 flex flex-wrap gap-4 justify-between items-center shadow-sm">
+                        <div className="flex flex-wrap gap-3">
+                            <div className="flex items-center gap-1">
+                                <span className="text-xs font-bold text-gray-400">DIST:</span>
+                                <div className="flex bg-white rounded border border-gray-300 overflow-hidden">
+                                    {[8000, 16000, 32000].map((r) => (
+                                        <button
+                                            key={r}
+                                            onClick={() => setHotelFilters(prev => ({ ...prev, radius: r }))}
+                                            className={`px-2 py-1 text-xs font-bold ${hotelFilters.radius === r ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                                        >
+                                            {(r / 1600).toFixed(0)}m
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                        <button
+                            onClick={executeFilteredSearch}
+                            className="bg-gray-800 text-white text-xs px-3 py-1 rounded hover:bg-black transition-colors flex items-center gap-1"
+                        >
+                            🔄 Update Matches
+                        </button>
+                    </div>
+
                     <h3 className="text-lg font-semibold mb-3 text-gray-700">
-                        🏨 Found {places.length} nearby places - Click to add to itinerary:
+                        🏨 Found {places.length} nearby places - Double-click to add to itinerary:
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
                         {places.map((place) => {
-                            const isHotel = place.types?.includes('hotel') || place.types?.includes('lodging');
+                            const isHotel = place.types?.includes('lodging') || place.types?.includes('hotel');
                             return (
                                 <div
                                     key={place.id}
                                     onClick={() => handlePlaceSelect(place)}
-                                    className="bg-white rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 border-transparent hover:border-green-500 overflow-hidden"
+                                    onDoubleClick={() => handlePlaceConfirm(place)}
+                                    className={`bg-white rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 overflow-hidden ${selectedPlace?.id === place.id ? 'border-green-500 ring-2 ring-green-300 transform scale-[1.02]' : 'border-transparent hover:border-green-500'
+                                        }`}
                                 >
                                     {place.photo && (
                                         <img src={place.photo} alt={place.name} className="w-full h-32 object-cover" />
@@ -533,10 +521,11 @@ export default function Chat() {
                                     )}
                                     <div className="p-3">
                                         <h4 className="font-bold text-gray-800 truncate">{place.name}</h4>
-                                        <div className="flex items-center gap-2 text-sm flex-wrap">
+                                        <div className="flex items-center gap-2 text-sm flex-wrap mt-1">
                                             {isHotel && place.rating > 0 && (
-                                                <span className="text-yellow-500 font-semibold">
-                                                    {'★'.repeat(place.rating)}{'☆'.repeat(5 - place.rating)}
+                                                <span className="text-yellow-500 font-semibold tracking-wide">
+                                                    {'★'.repeat(Math.round(place.rating))}{'☆'.repeat(5 - Math.round(place.rating))}
+                                                    <span className="text-gray-400 font-normal ml-1">({place.rating})</span>
                                                 </span>
                                             )}
                                             {!isHotel && place.rating > 0 && (
@@ -547,11 +536,9 @@ export default function Chat() {
                                                     )}
                                                 </>
                                             )}
-                                            {!isHotel && (
-                                                <span className="text-green-600 font-bold text-base">{place.priceLabel}</span>
-                                            )}
                                         </div>
-                                        <p className="text-sm text-gray-600 truncate">📍 {place.address || 'Address N/A'}</p>
+
+                                        <p className="text-sm text-gray-600 truncate mt-1">📍 {place.address || 'Address N/A'}</p>
 
                                         {isHotel && (
                                             <a
@@ -578,39 +565,15 @@ export default function Chat() {
                 </div>
             )}
 
-            {/* Selected Event Banner */}
-            {selectedEvent && (
-                <div className="mb-4 p-3 bg-green-100 rounded-lg border border-green-300 relative">
-                    <button
-                        onClick={() => setSelectedEvent(null)}
-                        className="absolute top-2 right-2 text-green-700 hover:text-green-900 bg-green-200 hover:bg-green-300 rounded-full px-2 py-0.5 text-xs font-bold transition-colors"
-                    >
-                        Change Event
-                    </button>
-                    <div className="flex items-center gap-3">
-                        {selectedEvent.image && (
-                            <img src={selectedEvent.image} alt="" className="w-16 h-16 object-cover rounded" />
-                        )}
-                        <div>
-                            <p className="font-semibold text-green-800">✅ Selected Event:</p>
-                            <p className="text-sm text-green-700">{selectedEvent.name}</p>
-                            <p className="text-xs text-green-600">{formatDate(selectedEvent.date)} • {selectedEvent.venue}</p>
-                        </div>
-                    </div>
-
-                    {/* Manual Search Buttons Removed as per request */}
-                </div>
-            )}
-
             {/* Itinerary */}
-            {itinerary.length > 0 && (
+            {(itinerary.length > 0 || selectedEvent) && (
                 <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
                     <h3 className="font-bold text-purple-800 mb-3">📋 Your Itinerary</h3>
                     <div className="space-y-2">
                         {selectedEvent && (
                             <div className="flex items-center gap-2 p-2 bg-white rounded border">
                                 <span className="text-lg">🎫</span>
-                                <div>
+                                <div className="flex-1">
                                     <p className="font-semibold text-sm">{selectedEvent.name}</p>
                                     <p className="text-xs text-gray-500">{selectedEvent.venue}</p>
                                 </div>
@@ -619,19 +582,26 @@ export default function Chat() {
                         {itinerary.map((item, idx) => (
                             <div key={idx} className="flex items-center gap-2 p-2 bg-white rounded border">
                                 <span className="text-lg">{'rating' in item ? '🍽️' : '🏨'}</span>
-                                <div>
+                                <div className="flex-1">
                                     <p className="font-semibold text-sm">{item.name}</p>
                                     <p className="text-xs text-gray-500">
-                                        {'rating' in item && `⭐ ${(item as Place).rating} • ${(item as Place).priceLabel}`}
+                                        {'rating' in item && `⭐ ${(item as Place).rating}`}
                                     </p>
                                 </div>
+                                <button
+                                    onClick={() => removeFromItinerary(item.id)}
+                                    className="text-gray-400 hover:text-red-500 p-1"
+                                    title="Remove from itinerary"
+                                >
+                                    ✕
+                                </button>
                             </div>
                         ))}
                     </div>
                 </div>
             )}
 
-            {/* Input Form Replacement Logic */}
+            {/* Input Form & Confirmation Logic */}
             <div className="sticky bottom-4 bg-white p-3 rounded-lg shadow-lg border border-gray-200">
                 {waitingForConfirmation === 'hotels' ? (
                     <div className="flex flex-col items-center justify-center py-2 animate-fadeIn">
@@ -641,7 +611,7 @@ export default function Chat() {
                                 onClick={() => confirmHotels(true)}
                                 className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full font-bold transition-all transform hover:scale-105"
                             >
-                                Yes, Find Hotels
+                                🏨 Yes, Find Hotels
                             </button>
                             <button
                                 onClick={() => confirmHotels(false)}
@@ -659,23 +629,7 @@ export default function Chat() {
                         </div>
 
                         <div className="space-y-4">
-                            {/* Budget */}
-                            <div>
-                                <label className="text-xs font-semibold text-gray-500 uppercase">Budget</label>
-                                <div className="flex gap-2 mt-1">
-                                    {['cheap', 'moderate', 'expensive'].map((b) => (
-                                        <button
-                                            key={b}
-                                            onClick={() => setHotelFilters(prev => ({ ...prev, budget: b }))}
-                                            className={`flex-1 py-1 rounded text-sm font-bold border ${hotelFilters.budget === b ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300'}`}
-                                        >
-                                            {b === 'cheap' ? '$' : b === 'moderate' ? '$$' : '$$$'}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Distance */}
+                            {/* Distance Only */}
                             <div>
                                 <label className="text-xs font-semibold text-gray-500 uppercase">Distance (Radius)</label>
                                 <div className="flex gap-2 mt-1">
@@ -686,22 +640,6 @@ export default function Chat() {
                                             className={`flex-1 py-1 rounded text-sm font-bold border ${hotelFilters.radius === r ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'}`}
                                         >
                                             {(r / 1600).toFixed(0)} Miles
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Rating */}
-                            <div>
-                                <label className="text-xs font-semibold text-gray-500 uppercase">Min Rating</label>
-                                <div className="flex gap-2 mt-1">
-                                    {[3, 4, 5].map((r) => (
-                                        <button
-                                            key={r}
-                                            onClick={() => setHotelFilters(prev => ({ ...prev, rating: r }))}
-                                            className={`flex-1 py-1 rounded text-sm font-bold border ${hotelFilters.rating === r ? 'bg-yellow-500 text-white border-yellow-500' : 'bg-white text-gray-600 border-gray-300'}`}
-                                        >
-                                            {r}+ Stars
                                         </button>
                                     ))}
                                 </div>
