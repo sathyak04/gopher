@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { useSession } from "next-auth/react"
+import { getChat, saveChat } from "@/app/actions"
 import MapView from './MapView';
 
 interface Event {
@@ -67,7 +69,15 @@ const PlaceImage = ({ place }: { place: Place }) => {
     );
 };
 
-export default function Chat() {
+
+
+interface ChatProps {
+    sessionId: string;
+    isSidebarOpen: boolean;
+    isDarkMode: boolean;
+}
+
+export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps) {
     const [messages, setMessages] = useState<Array<{ role: string, content: string }>>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -102,7 +112,155 @@ export default function Chat() {
         activity: ''
     });
 
-    // Feature Flags & UI State
+
+    // --- Session Management ---
+    const { data: session } = useSession();
+
+    useEffect(() => {
+        // Load messages for this session
+        const load = async () => {
+            if (session?.user) {
+                const dbChat = await getChat(sessionId);
+                if (dbChat) {
+                    setMessages(dbChat.messages.map((m: any) => ({
+                        id: m.id,
+                        role: m.role,
+                        content: m.content
+                    })) as any); // Type cast simplified for speed
+
+                    if (dbChat.events) setEvents(dbChat.events);
+                    if (dbChat.itinerary) setItinerary(dbChat.itinerary);
+                } else {
+                    // DB chat not found - treat as new
+                    resetState();
+                }
+            } else {
+                // LocalStorage Fallback
+                const savedData = localStorage.getItem(`chat_session_${sessionId}`);
+                if (savedData) {
+                    try {
+                        const parsed = JSON.parse(savedData);
+                        if (parsed.messages) setMessages(parsed.messages);
+                        if (parsed.events) setEvents(parsed.events);
+                        if (parsed.itinerary) setItinerary(parsed.itinerary);
+                    } catch (e) {
+                        console.error('Failed to load session', e);
+                    }
+                } else {
+                    resetState();
+                }
+            }
+        }
+        load();
+    }, [sessionId, session]); // Reload if session changes (login)
+
+    const resetState = () => {
+        setMessages([]);
+        setEvents([]);
+        setItinerary([]);
+        setHotelResults([]);
+        setRestaurantResults([]);
+        setExploreResults([]);
+        setSelectedEvent(null);
+        setSelectedPlace(null);
+        setWaitingForConfirmation(null);
+        setHasSearchedEvents(false);
+        setHasSearchedPlaces(false);
+        setIsHotelsExpanded(true);
+        setInput('');
+    }
+
+    const saveSessionData = async (msgs: Array<{ role: string, content: string }>, title?: string) => {
+        // DB Save
+        if (session?.user) {
+            // Need to determine title if not provided
+            // Getting existing title if not provided is tricky without state, but we can assume 'New Chat' or parse msg
+            let preview = title;
+            if (!preview) {
+                preview = msgs.find(m => m.role === 'user')?.content.substring(0, 30) || 'New Chat';
+                // If we have an existing DB chat, we probably shouldn't overwrite title with message preview unless it's new.
+                // actions.ts saveChat handles update. If we pass undefined/null title, we might want to keep existing?
+                // My saveChat action updates title if provided. 
+                // Let's rely on action: saveChat(id, title, ...)
+            }
+
+            // We need to pass data (events, itinerary)
+            const metaData = {
+                events,
+                itinerary
+            };
+
+            // If title is undefined, we pass 'New Chat' or generated one? 
+            // Ideally we only update title if it's a NEW confirmed event or user rename.
+            // If just saving messages, we might want to keep current title.
+            // But we don't know current title here easily without fetching.
+            // For now, if no title passed, generate from message.
+
+            // Wait! If title is NOT passed, it means it's an auto-save.
+            // We shouldn't overwrite a custom title with "New Chat".
+            // My saveChat action: if I pass a title, it updates it.
+            // I should modify saveSessionData to fetch existing value? Or modify acton to accept optional title.
+
+            // Let's assume title is REQUIRED for "Confirmation", otherwise ignore?
+            // Or use a special flag.
+
+            // Simplification: 
+            const derivedTitle = title || msgs.find(m => m.role === 'user')?.content.substring(0, 30) || 'New Chat';
+
+            await saveChat(sessionId, derivedTitle, msgs, metaData);
+        } else {
+            // LocalStorage Save
+            saveSessionLocal(msgs, title);
+        }
+    };
+
+    const saveSessionLocal = (msgs: Array<{ role: string, content: string }>, title?: string) => {
+        // 1. Check if session exists or we are creating it (title provided)
+        const existingDataStr = localStorage.getItem(`chat_session_${sessionId}`);
+
+        if (!title && !existingDataStr) {
+            return; // Don't save unconfirmed empty chats
+        }
+
+        let existingData = existingDataStr ? JSON.parse(existingDataStr) : {};
+
+        // 2. Determine Title (Preview)
+        let preview = title;
+        if (!preview) {
+            preview = existingData.preview;
+            if (!preview || preview === 'New Chat') {
+                preview = msgs.find(m => m.role === 'user')?.content.substring(0, 30) || 'New Chat';
+            }
+        }
+
+        // 3. Preserve Pinned State if exists
+        const isPinned = existingData.isPinned || false;
+
+        const data = {
+            id: sessionId,
+            messages: msgs,
+            events, // Save context
+            itinerary,
+            preview: preview,
+            isPinned: isPinned,
+            timestamp: existingData.timestamp || Date.now()
+        };
+
+        if (msgs.length !== existingData.messages?.length) {
+            data.timestamp = Date.now();
+        }
+
+        localStorage.setItem(`chat_session_${sessionId}`, JSON.stringify(data));
+        window.dispatchEvent(new Event('storage'));
+    };
+
+    // Auto-save on message change
+    useEffect(() => {
+        if (messages.length > 0) {
+            saveSessionData(messages);
+        }
+    }, [messages, sessionId, session]); // session dep added
+
 
 
     const [itinerary, setItinerary] = useState<Array<Event | Place>>([]);
@@ -285,6 +443,10 @@ export default function Chat() {
 
         const newMessages = [...messages, eventMessage];
         setMessages(newMessages);
+
+        // SAVE SESSION IMMEDIATELY with Event Name
+        saveSessionData(newMessages, event.name);
+
         sendToAI(newMessages);
     };
 
@@ -653,12 +815,12 @@ Goal: A complete, optimized itinerary plan.
                         key={place.id}
                         onClick={() => handlePlaceSelect(place)}
                         onDoubleClick={() => handlePlaceConfirm(place)}
-                        className={`bg-white rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 overflow-hidden flex flex-col sm:flex-row ${selectedPlace?.id === place.id ? 'border-green-500 ring-2 ring-green-300 transform scale-[1.01]' : 'border-transparent hover:border-green-500'
+                        className={`bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 overflow-hidden flex flex-col sm:flex-row ${selectedPlace?.id === place.id ? 'border-green-500 ring-2 ring-green-300 transform scale-[1.01]' : 'border-transparent dark:border-gray-700 hover:border-green-500'
                             }`}
                     >
                         <PlaceImage place={place} />
                         <div className="p-3 flex-1 min-w-0">
-                            <h4 className="font-bold text-gray-800 truncate">{place.name}</h4>
+                            <h4 className="font-bold text-gray-800 dark:text-gray-100 truncate">{place.name}</h4>
                             <div className="flex items-center gap-2 text-sm flex-wrap mt-1">
                                 {isHotel && place.rating > 0 && (
                                     <span className="text-yellow-500 font-semibold tracking-wide">
@@ -676,7 +838,7 @@ Goal: A complete, optimized itinerary plan.
                                 )}
                             </div>
 
-                            <p className="text-sm text-gray-600 truncate mt-1">📍 {place.address || 'Address N/A'}</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-1">📍 {place.address || 'Address N/A'}</p>
 
                             {isHotel && (
                                 <a
@@ -783,15 +945,15 @@ Goal: A complete, optimized itinerary plan.
     };
 
     return (
-        <div className="flex flex-col lg:flex-row w-full h-full bg-gray-50 overflow-hidden">
+        <div className="flex flex-col lg:flex-row w-full h-full bg-gray-50 dark:bg-gray-950 overflow-hidden text-gray-800 dark:text-gray-100">
             {/* LEFT PANEL: Chat & Itinerary (Scrollable) */}
-            <div className="w-full lg:w-1/2 h-full overflow-y-auto p-2 md:p-4 flex flex-col">
+            <div className={`w-full lg:w-1/2 h-full overflow-y-auto p-2 md:p-4 flex flex-col transition-opacity duration-300 ease-in-out ${isSidebarOpen ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
                 <div className="w-full h-full flex flex-col">
                     {/* Chat Messages */}
                     <div className="space-y-4 mb-4 flex-grow">
                         {messages.length === 0 && (
-                            <div className="text-center text-gray-500 py-8">
-                                <h2 className="text-2xl font-bold text-gray-800 mb-2">🎫 Event Trip Planner</h2>
+                            <div className="text-center text-gray-500 dark:text-gray-400 py-8">
+                                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-2">🎫 Event Trip Planner</h2>
                                 <p>Tell me about an event or artist you want to see!</p>
                                 <p className="text-sm mt-2">Example: "I want to see Taylor Swift" or "Find Lakers games"</p>
                             </div>
@@ -802,8 +964,8 @@ Goal: A complete, optimized itinerary plan.
                             if (m.role === 'assistant' && !m.content.trim() && (!isLast || !isLoading)) return null;
 
                             return (
-                                <div key={index} className={`p-4 rounded-lg ${m.role === 'user' ? 'bg-blue-100 ml-auto max-w-[90%]' : 'bg-white shadow mr-auto max-w-[90%]'}`}>
-                                    <div className="font-semibold text-sm text-gray-600 mb-1">
+                                <div key={index} className={`p-4 rounded-lg ${m.role === 'user' ? 'bg-emerald-100 dark:bg-emerald-900 dark:text-emerald-100 ml-auto max-w-[90%]' : 'bg-white dark:bg-gray-800 shadow mr-auto max-w-[90%]'}`}>
+                                    <div className="font-semibold text-sm text-gray-600 dark:text-gray-400 mb-1">
                                         {m.role === 'user' ? '👤 You' : '🤖 AI Assistant'}
                                     </div>
                                     <p className="whitespace-pre-wrap">{m.content}</p>
@@ -812,7 +974,7 @@ Goal: A complete, optimized itinerary plan.
                                     {m.role === 'user' && (m.content.startsWith('Find me') || m.content.startsWith('Searching for hotels')) && (
                                         <button
                                             onClick={() => restoreFiltersFromMessage(m.content)}
-                                            className="mt-2 text-xs bg-white/50 hover:bg-white/80 text-blue-800 px-2 py-1 rounded transition-colors flex items-center gap-1 w-fit border border-blue-200"
+                                            className="mt-2 text-xs bg-white/50 dark:bg-black/20 hover:bg-white/80 dark:hover:bg-black/40 text-blue-800 dark:text-blue-300 px-2 py-1 rounded transition-colors flex items-center gap-1 w-fit border border-blue-200 dark:border-blue-800"
                                             title="Restore these search options"
                                         >
                                             🔄 Search Options
@@ -832,15 +994,15 @@ Goal: A complete, optimized itinerary plan.
                     )}
 
                     {!selectedEvent && !isSearchingEvents && hasSearchedEvents && events.length === 0 && (
-                        <div className="text-center py-4 text-red-500 bg-red-50 rounded-lg border border-red-200 mb-4 animate-fadeIn">
-                            <p>❌ No events found matching your request.</p>
-                            <p className="text-sm text-gray-600 mt-1">Try a different artist name or city.</p>
+                        <div className="text-center py-4 text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 mb-4 animate-fadeIn">
+                            <p className="dark:text-red-400">❌ No events found matching your request.</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Try a different artist name or city.</p>
                         </div>
                     )}
 
                     {events.length > 0 && (
                         <div className="mb-6">
-                            <h3 className="text-lg font-semibold mb-3 text-gray-700">
+                            <h3 className="text-lg font-semibold mb-3 text-gray-700 dark:text-gray-200">
                                 🎭 Found {events.length} events - Select, then Double-click to Confirm:
                             </h3>
                             <div className="grid grid-cols-1 gap-4">
@@ -849,18 +1011,18 @@ Goal: A complete, optimized itinerary plan.
                                         key={event.id}
                                         onClick={() => handleEventSelect(event)}
                                         onDoubleClick={() => handleEventConfirm(event)}
-                                        className={`bg-white rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 overflow-hidden flex flex-col sm:flex-row ${highlightedEventId === event.id ? 'border-green-500 ring-2 ring-green-300 transform scale-[1.01]' : 'border-transparent hover:border-blue-500'
+                                        className={`bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 overflow-hidden flex flex-col sm:flex-row ${highlightedEventId === event.id ? 'border-green-500 ring-2 ring-green-300 transform scale-[1.01]' : 'border-transparent dark:border-gray-700 hover:border-blue-500'
                                             }`}
                                     >
                                         {event.image && (
                                             <img src={event.image} alt={event.name} className="w-full sm:w-32 h-32 object-cover" />
                                         )}
                                         <div className="p-3 flex-1 min-w-0">
-                                            <h4 className="font-bold text-gray-800 truncate">{event.name}</h4>
-                                            <p className="text-sm text-gray-600">📅 {formatDate(event.date)}</p>
-                                            <p className="text-sm text-gray-600">📍 {event.venue}</p>
-                                            <p className="text-sm text-gray-500 truncate">{event.city}, {event.state}</p>
-                                            <p className="text-sm font-semibold text-green-600 mt-1">{event.priceRange}</p>
+                                            <h4 className="font-bold text-gray-800 dark:text-gray-100 truncate">{event.name}</h4>
+                                            <p className="text-sm text-gray-600 dark:text-gray-300">📅 {formatDate(event.date)}</p>
+                                            <p className="text-sm text-gray-600 dark:text-gray-300">📍 {event.venue}</p>
+                                            <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{event.city}, {event.state}</p>
+                                            <p className="text-sm font-semibold text-green-600 dark:text-green-400 mt-1">{event.priceRange}</p>
                                         </div>
                                     </div>
                                 ))}
@@ -877,9 +1039,9 @@ Goal: A complete, optimized itinerary plan.
 
                     {/* ----- HOTELS SECTION (Show only when not in food or explore mode) ----- */}
                     {hotelResults.length > 0 && !['food', 'food_filters', 'explore', 'explore_filters'].includes(waitingForConfirmation) && (
-                        <div className="mb-4 bg-white rounded-xl border border-gray-200 shadow-sm">
-                            <div className="bg-gray-50 p-3 flex justify-between items-center border-b border-gray-200">
-                                <h3 className="font-bold text-gray-700 flex items-center gap-2">
+                        <div className="mb-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                            <div className="bg-gray-50 dark:bg-gray-800 p-3 flex justify-between items-center border-b border-gray-200 dark:border-gray-700">
+                                <h3 className="font-bold text-gray-700 dark:text-gray-200 flex items-center gap-2">
                                     🏨 Found {hotelResults.length} Hotels
                                 </h3>
                                 <div className="flex items-center gap-3">
@@ -889,16 +1051,16 @@ Goal: A complete, optimized itinerary plan.
                                 </div>
                             </div>
 
-                            <div className="p-4 bg-gray-50/50">
+                            <div className="p-4 bg-gray-50/50 dark:bg-gray-800/50 rounded-lg border border-gray-100 dark:border-gray-700">
                                 {/* Filter Controls */}
                                 <div className="mb-3 flex justify-end">
-                                    <div className="flex items-center gap-1 bg-white rounded border border-gray-300 p-1">
+                                    <div className="flex items-center gap-1 bg-white dark:bg-gray-700 rounded border border-gray-300 dark:border-gray-600 p-1">
                                         <span className="text-xs font-bold text-gray-400 px-1">DIST:</span>
                                         {[8000, 16000, 32000].map((r) => (
                                             <button
                                                 key={r}
                                                 onClick={(e) => { e.stopPropagation(); setHotelFilters(prev => ({ ...prev, radius: r })); executeFilteredSearch(); }}
-                                                className={`px-2 py-0.5 text-xs font-bold rounded ${hotelFilters.radius === r ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                                                className={`px-2 py-0.5 text-xs font-bold rounded ${hotelFilters.radius === r ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'}`}
                                             >
                                                 {(r / 1600).toFixed(0)}m
                                             </button>
@@ -914,7 +1076,7 @@ Goal: A complete, optimized itinerary plan.
                                                 key={place.id}
                                                 onClick={() => handlePlaceSelect(place)}
                                                 onDoubleClick={() => handlePlaceConfirm(place)}
-                                                className={`bg-white rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 overflow-hidden flex flex-col sm:flex-row ${selectedPlace?.id === place.id ? 'border-green-500 ring-2 ring-green-300 transform scale-[1.01]' : 'border-transparent hover:border-green-500'}`}
+                                                className={`bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 overflow-hidden flex flex-col sm:flex-row ${selectedPlace?.id === place.id ? 'border-green-500 ring-2 ring-green-300 transform scale-[1.01]' : 'border-transparent dark:border-gray-700 hover:border-green-500'}`}
                                             >
                                                 {place.photo ? (
                                                     <img src={place.photo} alt={place.name} className="w-full sm:w-32 h-32 object-cover" />
@@ -924,7 +1086,7 @@ Goal: A complete, optimized itinerary plan.
                                                     </div>
                                                 )}
                                                 <div className="p-3 flex-1 min-w-0">
-                                                    <h4 className="font-bold text-gray-800 truncate">{place.name}</h4>
+                                                    <h4 className="font-bold text-gray-800 dark:text-gray-100 truncate">{place.name}</h4>
                                                     <div className="flex items-center gap-2 text-sm flex-wrap mt-1">
                                                         {place.rating > 0 && (
                                                             <span className="text-yellow-500 font-semibold tracking-wide">
@@ -934,7 +1096,7 @@ Goal: A complete, optimized itinerary plan.
                                                         )}
                                                     </div>
 
-                                                    <p className="text-sm text-gray-600 truncate mt-1">📍 {place.address || 'Address N/A'}</p>
+                                                    <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-1">📍 {place.address || 'Address N/A'}</p>
 
                                                     <a
                                                         href={`https://www.google.com/search?q=${encodeURIComponent(place.name + ' ' + (place.address || '') + ' reviews')}`}
@@ -966,45 +1128,53 @@ Goal: A complete, optimized itinerary plan.
 
                     {/* ----- RESTAURANTS SECTION (Show only when not in hotel or explore mode) ----- */}
                     {restaurantResults.length > 0 && !['hotels', 'hotels_filters', 'explore', 'explore_filters'].includes(waitingForConfirmation) && (
-                        <div className="mb-6">
-                            <div className="flex justify-between items-end mb-3">
-                                <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                        <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                            <div className="bg-gray-50 dark:bg-gray-800 p-3 flex justify-between items-center border-b border-gray-200 dark:border-gray-700">
+                                <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
                                     🍽️ Nearby Restaurants
-                                    <span className="text-sm font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                                </h3>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm font-normal text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
                                         {restaurantResults.length} found
                                     </span>
-                                </h3>
-                                <button
-                                    onClick={() => setWaitingForConfirmation('food_filters')}
-                                    className="text-xs text-orange-600 font-bold bg-orange-50 px-3 py-1.5 rounded border border-orange-200 hover:bg-orange-100 hover:border-orange-300 transition-colors flex items-center gap-1"
-                                >
-                                    🔧 Filters: {foodFilters.cuisine || 'All'} • {(foodFilters.radius / 1600).toFixed(1)} mi
-                                </button>
+                                    <button
+                                        onClick={() => setWaitingForConfirmation('food_filters')}
+                                        className="text-xs text-orange-600 dark:text-orange-400 font-bold bg-orange-50 dark:bg-orange-900/30 px-3 py-1.5 rounded border border-orange-200 dark:border-orange-800 hover:bg-orange-100 dark:hover:bg-orange-900/50 hover:border-orange-300 dark:hover:border-orange-700 transition-colors flex items-center gap-1"
+                                    >
+                                        🔧 Filters: {foodFilters.cuisine || 'All'}
+                                    </button>
+                                </div>
                             </div>
 
-                            {renderPlacesGrid(restaurantResults, false)}
+                            <div className="p-4">
+                                {renderPlacesGrid(restaurantResults, false)}
+                            </div>
                         </div>
                     )}
 
                     {/* ----- EXPLORE SECTION (Show only when in explore mode) ----- */}
                     {exploreResults.length > 0 && ['explore', 'explore_filters', null].includes(waitingForConfirmation) && (
-                        <div className="mb-6">
-                            <div className="flex justify-between items-end mb-3">
-                                <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                        <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                            <div className="bg-gray-50 dark:bg-gray-800 p-3 flex justify-between items-center border-b border-gray-200 dark:border-gray-700">
+                                <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
                                     🎭 Explore Results
-                                    <span className="text-sm font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                                </h3>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm font-normal text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
                                         {exploreResults.length} found
                                     </span>
-                                </h3>
-                                <button
-                                    onClick={() => setWaitingForConfirmation('explore_filters')}
-                                    className="text-xs text-purple-600 font-bold bg-purple-50 px-3 py-1.5 rounded border border-purple-200 hover:bg-purple-100 hover:border-purple-300 transition-colors flex items-center gap-1"
-                                >
-                                    🔧 Filters: {exploreFilters.activity || 'All'} • {(exploreFilters.radius / 1600).toFixed(0)} mi
-                                </button>
+                                    <button
+                                        onClick={() => setWaitingForConfirmation('explore_filters')}
+                                        className="text-xs text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-900/30 px-3 py-1.5 rounded border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/50 hover:border-purple-300 dark:hover:border-purple-700 transition-colors flex items-center gap-1"
+                                    >
+                                        🔧 Filters: {exploreFilters.activity || 'All'}
+                                    </button>
+                                </div>
                             </div>
 
-                            {renderPlacesGrid(exploreResults, false)}
+                            <div className="p-4">
+                                {renderPlacesGrid(exploreResults, false)}
+                            </div>
                         </div>
                     )}
 
@@ -1012,17 +1182,17 @@ Goal: A complete, optimized itinerary plan.
                     {hasSearchedPlaces && !isSearchingPlaces && (
                         <>
                             {waitingForConfirmation === 'hotels_filters' && hotelResults.length === 0 && (
-                                <div className="text-center py-4 text-gray-500 bg-gray-50 rounded-lg border border-gray-200 mb-4">
+                                <div className="text-center py-4 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 mb-4">
                                     ❌ No hotels found with current filters.
                                 </div>
                             )}
                             {waitingForConfirmation === 'food_filters' && restaurantResults.length === 0 && (
-                                <div className="text-center py-4 text-gray-500 bg-gray-50 rounded-lg border border-gray-200 mb-4">
+                                <div className="text-center py-4 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 mb-4">
                                     ❌ No restaurants found. Try changing filters.
                                 </div>
                             )}
                             {waitingForConfirmation === 'explore_filters' && exploreResults.length === 0 && (
-                                <div className="text-center py-4 text-gray-500 bg-gray-50 rounded-lg border border-gray-200 mb-4">
+                                <div className="text-center py-4 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 mb-4">
                                     ❌ No places found. Try increasing radius.
                                 </div>
                             )}
@@ -1030,10 +1200,11 @@ Goal: A complete, optimized itinerary plan.
                     )}
 
                     {/* Input Area (Sticky Bottom on Mobile) */}
-                    <div className="sticky bottom-0 bg-white pt-2 pb-4 border-t border-gray-200 mt-auto">
+                    {/* Input Area (Sticky Bottom on Mobile) */}
+                    <div className="sticky bottom-0 bg-gray-50 dark:bg-gray-950 pt-2 pb-4 mt-auto transition-colors">
                         {waitingForConfirmation === 'hotels' ? (
-                            <div className="flex flex-col items-center justify-center py-2 animate-fadeIn bg-gray-50 rounded-lg border border-gray-200 p-4">
-                                <p className="mb-3 font-semibold text-gray-700">Would you like to search for hotels nearby?</p>
+                            <div className="flex flex-col items-center justify-center py-2 animate-fadeIn bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 transition-colors">
+                                <p className="mb-3 font-semibold text-gray-700 dark:text-gray-200">Would you like to search for hotels nearby?</p>
                                 <div className="flex gap-4">
                                     <button
                                         onClick={() => confirmHotels(true)}
@@ -1050,8 +1221,8 @@ Goal: A complete, optimized itinerary plan.
                                 </div>
                             </div>
                         ) : waitingForConfirmation === 'food' ? (
-                            <div className="flex flex-col items-center justify-center py-2 animate-fadeIn bg-gray-50 rounded-lg border border-gray-200 p-4">
-                                <p className="mb-3 font-semibold text-gray-700">Would you like to find restaurants nearby?</p>
+                            <div className="flex flex-col items-center justify-center py-2 animate-fadeIn bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 transition-colors">
+                                <p className="mb-3 font-semibold text-gray-700 dark:text-gray-200">Would you like to find restaurants nearby?</p>
                                 <div className="flex gap-4">
                                     <button
                                         onClick={() => confirmFood(true)}
@@ -1068,15 +1239,15 @@ Goal: A complete, optimized itinerary plan.
                                 </div>
                             </div>
                         ) : waitingForConfirmation === 'food_filters' ? (
-                            <div className="bg-orange-50 p-4 rounded-lg animate-fadeIn border border-gray-200">
+                            <div className="bg-orange-50 dark:bg-gray-800 p-4 rounded-lg animate-fadeIn border border-gray-200 dark:border-gray-700 transition-colors">
                                 <div className="flex justify-between items-center mb-3">
-                                    <h3 className="font-bold text-gray-700">🍽️ Food Preferences</h3>
+                                    <h3 className="font-bold text-gray-700 dark:text-gray-200">🍽️ Food Preferences</h3>
                                     <button onClick={() => setWaitingForConfirmation(null)} className="text-gray-400 hover:text-gray-600">×</button>
                                 </div>
 
                                 <div className="space-y-4">
                                     {/* 1. Location Toggle */}
-                                    <div className="flex bg-white rounded-lg border border-gray-300 p-1">
+                                    <div className="flex bg-white dark:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 p-1">
                                         <button
                                             onClick={() => setFoodFilters(prev => ({ ...prev, locationPreference: 'venue' }))}
                                             className={`flex-1 py-1 rounded-md text-sm font-bold transition-colors ${foodFilters.locationPreference === 'venue' ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
@@ -1085,7 +1256,7 @@ Goal: A complete, optimized itinerary plan.
                                         </button>
                                         <button
                                             onClick={() => setFoodFilters(prev => ({ ...prev, locationPreference: 'hotel' }))}
-                                            className={`flex-1 py-1 rounded-md text-sm font-bold transition-colors ${foodFilters.locationPreference === 'hotel' ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+                                            className={`flex-1 py-1 rounded-md text-sm font-bold transition-colors ${foodFilters.locationPreference === 'hotel' ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-500 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'}`}
                                             disabled={!itinerary.some(i => 'types' in i && (i.types.includes('lodging') || i.types.includes('hotel')))}
                                         >
                                             🏨 Near Hotel
@@ -1100,7 +1271,7 @@ Goal: A complete, optimized itinerary plan.
                                                 <button
                                                     key={r}
                                                     onClick={() => setFoodFilters(prev => ({ ...prev, radius: r }))}
-                                                    className={`px-3 py-1 rounded text-xs font-bold border ${foodFilters.radius === r ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-600 border-gray-300'}`}
+                                                    className={`px-3 py-1 rounded text-xs font-bold border ${foodFilters.radius === r ? 'bg-orange-600 text-white border-orange-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600'}`}
                                                 >
                                                     {(r / 1600).toFixed(0)} mi
                                                 </button>
@@ -1116,7 +1287,7 @@ Goal: A complete, optimized itinerary plan.
                                                 <button
                                                     key={c}
                                                     onClick={() => setFoodFilters(prev => ({ ...prev, cuisine: c }))}
-                                                    className={`px-2 py-1 rounded-full text-xs font-bold border ${foodFilters.cuisine === c ? 'bg-orange-100 text-orange-800 border-orange-300' : 'bg-white text-gray-600 border-gray-200 hover:border-orange-300'}`}
+                                                    className={`px-2 py-1 rounded-full text-xs font-bold border ${foodFilters.cuisine === c ? 'bg-orange-100 text-orange-800 border-orange-300' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-orange-300'}`}
                                                 >
                                                     {c}
                                                 </button>
@@ -1124,7 +1295,7 @@ Goal: A complete, optimized itinerary plan.
                                         </div>
                                         <div className="flex gap-2">
                                             <input
-                                                className="flex-1 p-2 text-sm border border-gray-300 rounded focus:border-orange-500 focus:outline-none"
+                                                className="flex-1 p-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded focus:border-orange-500 focus:outline-none"
                                                 placeholder="Or type (e.g., 'Vegan')..."
                                                 value={foodFilters.cuisine}
                                                 onChange={(e) => setFoodFilters(prev => ({ ...prev, cuisine: e.target.value }))}
@@ -1142,9 +1313,9 @@ Goal: A complete, optimized itinerary plan.
                                 </div>
                             </div>
                         ) : waitingForConfirmation === 'hotels_filters' ? (
-                            <div className="bg-gray-50 p-4 rounded-lg animate-fadeIn border border-gray-200">
+                            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg animate-fadeIn border border-gray-200 dark:border-gray-700 transition-colors">
                                 <div className="flex justify-between items-center mb-4">
-                                    <h3 className="font-bold text-gray-700">🏨 Hotel Preferences</h3>
+                                    <h3 className="font-bold text-gray-700 dark:text-gray-200">🏨 Hotel Preferences</h3>
                                     <button onClick={() => setWaitingForConfirmation(null)} className="text-gray-400 hover:text-gray-600">×</button>
                                 </div>
 
@@ -1157,7 +1328,7 @@ Goal: A complete, optimized itinerary plan.
                                                 <button
                                                     key={r}
                                                     onClick={() => setHotelFilters(prev => ({ ...prev, radius: r }))}
-                                                    className={`flex-1 py-1 rounded text-sm font-bold border ${hotelFilters.radius === r ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'}`}
+                                                    className={`flex-1 py-1 rounded text-sm font-bold border ${hotelFilters.radius === r ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600'}`}
                                                 >
                                                     {(r / 1600).toFixed(0)} Miles
                                                 </button>
@@ -1174,8 +1345,8 @@ Goal: A complete, optimized itinerary plan.
                                 </div>
                             </div>
                         ) : waitingForConfirmation === 'explore' ? (
-                            <div className="flex flex-col items-center justify-center py-2 animate-fadeIn bg-purple-50 rounded-lg border border-purple-200 p-4">
-                                <p className="mb-3 font-semibold text-gray-700">Would you like to explore nearby activities?</p>
+                            <div className="flex flex-col items-center justify-center py-2 animate-fadeIn bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800 p-4 transition-colors">
+                                <p className="mb-3 font-semibold text-gray-700 dark:text-gray-200">Would you like to explore nearby activities?</p>
                                 <div className="flex gap-4">
                                     <button
                                         onClick={() => confirmExplore(true)}
@@ -1192,18 +1363,18 @@ Goal: A complete, optimized itinerary plan.
                                 </div>
                             </div>
                         ) : waitingForConfirmation === 'explore_filters' ? (
-                            <div className="bg-purple-50 p-4 rounded-lg animate-fadeIn border border-purple-200">
+                            <div className="bg-purple-50 dark:bg-gray-800 p-4 rounded-lg animate-fadeIn border border-purple-200 dark:border-gray-700 transition-colors">
                                 <div className="flex justify-between items-center mb-3">
-                                    <h3 className="font-bold text-gray-700">🎭 Explore Activities</h3>
+                                    <h3 className="font-bold text-gray-700 dark:text-gray-200">🎭 Explore Activities</h3>
                                     <button onClick={() => setWaitingForConfirmation(null)} className="text-gray-400 hover:text-gray-600">×</button>
                                 </div>
 
                                 <div className="space-y-4">
                                     {/* 1. Location Toggle */}
-                                    <div className="flex bg-white rounded-lg border border-gray-300 p-1">
+                                    <div className="flex bg-white dark:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 p-1">
                                         <button
                                             onClick={() => setExploreFilters(prev => ({ ...prev, locationPreference: 'venue' }))}
-                                            className={`flex-1 py-1 rounded-md text-sm font-bold transition-colors ${exploreFilters.locationPreference === 'venue' ? 'bg-purple-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+                                            className={`flex-1 py-1 rounded-md text-sm font-bold transition-colors ${exploreFilters.locationPreference === 'venue' ? 'bg-purple-500 text-white shadow-sm' : 'text-gray-500 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'}`}
                                         >
                                             📍 Near Venue
                                         </button>
@@ -1224,7 +1395,7 @@ Goal: A complete, optimized itinerary plan.
                                                 <button
                                                     key={r}
                                                     onClick={() => setExploreFilters(prev => ({ ...prev, radius: r }))}
-                                                    className={`px-3 py-1 rounded text-xs font-bold border ${exploreFilters.radius === r ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-300'}`}
+                                                    className={`px-3 py-1 rounded text-xs font-bold border ${exploreFilters.radius === r ? 'bg-purple-600 text-white border-purple-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600'}`}
                                                 >
                                                     {(r / 1600).toFixed(0)} mi
                                                 </button>
@@ -1239,7 +1410,7 @@ Goal: A complete, optimized itinerary plan.
                                             {/* Popular Option */}
                                             <button
                                                 onClick={() => setExploreFilters(prev => ({ ...prev, activity: 'Popular' }))}
-                                                className={`px-2 py-1 rounded-full text-xs font-bold border ${exploreFilters.activity === 'Popular' ? 'bg-red-100 text-red-800 border-red-300' : 'bg-white text-gray-600 border-gray-200 hover:border-red-300'}`}
+                                                className={`px-2 py-1 rounded-full text-xs font-bold border ${exploreFilters.activity === 'Popular' ? 'bg-red-100 text-red-800 border-red-300' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-red-300'}`}
                                             >
                                                 🔥 Most Popular
                                             </button>
@@ -1248,7 +1419,7 @@ Goal: A complete, optimized itinerary plan.
                                                 <button
                                                     key={a}
                                                     onClick={() => setExploreFilters(prev => ({ ...prev, activity: a }))}
-                                                    className={`px-2 py-1 rounded-full text-xs font-bold border ${exploreFilters.activity === a ? 'bg-purple-100 text-purple-800 border-purple-300' : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'}`}
+                                                    className={`px-2 py-1 rounded-full text-xs font-bold border ${exploreFilters.activity === a ? 'bg-purple-100 text-purple-800 border-purple-300' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-purple-300'}`}
                                                 >
                                                     {a}
                                                 </button>
@@ -1256,7 +1427,7 @@ Goal: A complete, optimized itinerary plan.
                                         </div>
                                         <div className="flex gap-2">
                                             <input
-                                                className="flex-1 p-2 text-sm border border-gray-300 rounded focus:border-purple-500 focus:outline-none"
+                                                className="flex-1 p-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded focus:border-purple-500 focus:outline-none"
                                                 placeholder="Or type (e.g., 'Bowling')..."
                                                 value={exploreFilters.activity}
                                                 onChange={(e) => setExploreFilters(prev => ({ ...prev, activity: e.target.value }))}
@@ -1279,19 +1450,19 @@ Goal: A complete, optimized itinerary plan.
                                     <div className="flex justify-end gap-2">
                                         <button
                                             onClick={() => setWaitingForConfirmation('food_filters')}
-                                            className="text-xs font-bold text-orange-600 bg-orange-50 px-3 py-1 rounded-full border border-orange-200 hover:bg-orange-100 transition-colors flex items-center gap-1"
+                                            className="text-xs font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 px-3 py-1 rounded-full border border-orange-200 dark:border-orange-800 hover:bg-orange-100 dark:hover:bg-orange-900/50 transition-colors flex items-center gap-1"
                                         >
                                             🍽️ Find Food
                                         </button>
                                         <button
                                             onClick={() => setWaitingForConfirmation('hotels_filters')}
-                                            className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 hover:bg-blue-100 transition-colors flex items-center gap-1"
+                                            className="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors flex items-center gap-1"
                                         >
                                             🏨 Find Hotels
                                         </button>
                                         <button
                                             onClick={() => setWaitingForConfirmation('explore_filters')}
-                                            className="text-xs font-bold text-purple-600 bg-purple-50 px-3 py-1 rounded-full border border-purple-200 hover:bg-purple-100 transition-colors flex items-center gap-1"
+                                            className="text-xs font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 px-3 py-1 rounded-full border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors flex items-center gap-1"
                                         >
                                             🎭 Explore
                                         </button>
@@ -1300,7 +1471,7 @@ Goal: A complete, optimized itinerary plan.
                                 )}
                                 <form onSubmit={handleSubmit} className="flex gap-2">
                                     <input
-                                        className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                        className="flex-1 p-3 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm placeholder-gray-500 dark:placeholder-gray-400"
                                         value={input}
                                         placeholder="Chat (e.g., 'Find hotels')..."
                                         onChange={(e) => setInput(e.target.value)}
@@ -1310,7 +1481,7 @@ Goal: A complete, optimized itinerary plan.
                                     <button
                                         type="submit"
                                         disabled={isLoading || !input.trim()}
-                                        className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors shadow-sm font-semibold"
+                                        className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 dark:disabled:text-gray-500 disabled:cursor-not-allowed transition-colors shadow-sm font-semibold"
                                     >
                                         {isLoading ? '...' : 'Send'}
                                     </button>
@@ -1322,7 +1493,7 @@ Goal: A complete, optimized itinerary plan.
             </div>
 
             {/* RIGHT PANEL: Map View + Itinerary (Desktop) */}
-            <div className="hidden lg:flex lg:flex-col w-1/2 h-full bg-gray-200 border-l border-gray-300">
+            <div className={`hidden lg:flex lg:flex-col w-1/2 h-full bg-gray-200 dark:bg-gray-800 border-l border-gray-300 dark:border-gray-700 transition-opacity duration-300 ease-in-out ${isSidebarOpen ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
                 {/* Map Section - Takes ~60% of height */}
                 <div className="h-[60%] relative">
                     <MapView
@@ -1332,29 +1503,30 @@ Goal: A complete, optimized itinerary plan.
                         selectedPlace={selectedPlace}
                         itinerary={itinerary}
                         onSelectPlace={handlePlaceSelect}
+                        isDarkMode={isDarkMode}
                     />
                 </div>
 
                 {/* Itinerary Section - Below the map */}
-                <div className="h-[40%] overflow-y-auto bg-white border-t border-gray-300">
+                <div className="h-[40%] overflow-y-auto bg-white dark:bg-gray-900 border-t border-gray-300 dark:border-gray-700">
                     {(itinerary.length > 0 || selectedEvent) ? (
-                        <div className="p-4 bg-purple-50 h-full">
-                            <div className="sticky top-0 bg-purple-50 py-2 flex justify-between items-center mb-3">
-                                <h3 className="font-bold text-purple-800">📋 Your Itinerary</h3>
+                        <div className="p-4 bg-emerald-50 dark:bg-emerald-950 h-full">
+                            <div className="sticky top-0 bg-emerald-50 dark:bg-emerald-950 py-2 flex justify-between items-center mb-3">
+                                <h3 className="font-bold text-emerald-800 dark:text-emerald-200">📋 Your Itinerary</h3>
                                 <button
                                     onClick={handleItinerarySubmission}
-                                    className="text-xs font-bold text-white bg-purple-600 px-3 py-1.5 rounded-full hover:bg-purple-700 shadow-sm transition-all flex items-center gap-1 active:scale-95"
+                                    className="text-xs font-bold text-white bg-emerald-600 px-3 py-1.5 rounded-full hover:bg-emerald-700 shadow-sm transition-all flex items-center gap-1 active:scale-95"
                                 >
                                     ✨ Generate Schedule
                                 </button>
                             </div>
                             <div className="space-y-2">
                                 {selectedEvent && (
-                                    <div className="flex items-center gap-2 p-2 bg-white rounded border">
+                                    <div className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
                                         <span className="text-lg">🎫</span>
                                         <div className="flex-1">
-                                            <p className="font-semibold text-sm">{selectedEvent.name}</p>
-                                            <p className="text-xs text-gray-500">{selectedEvent.venue}</p>
+                                            <p className="font-semibold text-sm text-gray-800 dark:text-gray-100">{selectedEvent.name}</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">{selectedEvent.venue}</p>
                                         </div>
                                     </div>
                                 )}
@@ -1362,13 +1534,13 @@ Goal: A complete, optimized itinerary plan.
                                     const isRestaurant = 'types' in item && !item.types.includes('lodging');
                                     const isHotel = 'types' in item && (item.types.includes('lodging') || item.types.includes('hotel'));
                                     return (
-                                        <div key={idx} className="flex items-center gap-2 p-2 rounded border bg-white">
+                                        <div key={idx} className="flex items-center gap-2 p-2 rounded border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
                                             <span className="text-lg">
                                                 {getPlaceEmoji(item.types)}
                                             </span>
                                             <div className="flex-1">
-                                                <p className="font-semibold text-sm">{item.name}</p>
-                                                <p className="text-xs text-gray-500">
+                                                <p className="font-semibold text-sm text-gray-800 dark:text-gray-100">{item.name}</p>
+                                                <p className="text-xs text-gray-500 dark:text-gray-400">
                                                     {'rating' in item && `⭐ ${(item as Place).rating}`}
                                                 </p>
                                                 <div className="flex flex-wrap gap-2 mt-1">
