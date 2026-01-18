@@ -112,6 +112,12 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
         activity: ''
     });
 
+    // Itinerary state - moved here to be available in save functions
+    const [itinerary, setItinerary] = useState<Array<Event | Place>>([]);
+
+    // Track if this chat has been confirmed with an event name
+    const [chatTitle, setChatTitle] = useState<string | null>(null);
+
 
     // --- Session Management ---
     const { data: session } = useSession();
@@ -122,14 +128,24 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
             if (session?.user) {
                 const dbChat = await getChat(sessionId);
                 if (dbChat) {
-                    setMessages(dbChat.messages.map((m: any) => ({
-                        id: m.id,
-                        role: m.role,
-                        content: m.content
-                    })) as any); // Type cast simplified for speed
+                    console.log('Loading chat from DB:', dbChat);
 
+                    // Restore Context
                     if (dbChat.events) setEvents(dbChat.events);
                     if (dbChat.itinerary) setItinerary(dbChat.itinerary);
+                    if (dbChat.selectedEvent) setSelectedEvent(dbChat.selectedEvent);
+                    if (dbChat.title) setChatTitle(dbChat.title);
+
+                    // Generate Welcome Back Message based on context
+                    if (dbChat.title) {
+                        setMessages([{
+                            role: 'assistant',
+                            content: `Welcome back! I've loaded your itinerary for **${dbChat.title}**. You can add more hotels, find food, or generate your schedule.`
+                        }]);
+                    } else {
+                        // Should not happen for confirmed chats, but fallback
+                        setMessages([]);
+                    }
                 } else {
                     // DB chat not found - treat as new
                     resetState();
@@ -140,9 +156,20 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
                 if (savedData) {
                     try {
                         const parsed = JSON.parse(savedData);
-                        if (parsed.messages) setMessages(parsed.messages);
                         if (parsed.events) setEvents(parsed.events);
                         if (parsed.itinerary) setItinerary(parsed.itinerary);
+                        if (parsed.selectedEvent) setSelectedEvent(parsed.selectedEvent);
+                        if (parsed.preview) setChatTitle(parsed.preview);
+
+                        // Generate Welcome Back Message
+                        if (parsed.preview) {
+                            setMessages([{
+                                role: 'assistant',
+                                content: `Welcome back! I've loaded your itinerary for **${parsed.preview}**. You can add more hotels, find food, or generate your schedule.`
+                            }]);
+                        } else {
+                            setMessages([]);
+                        }
                     } catch (e) {
                         console.error('Failed to load session', e);
                     }
@@ -153,6 +180,8 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
         }
         load();
     }, [sessionId, session]); // Reload if session changes (login)
+
+
 
     const resetState = () => {
         setMessages([]);
@@ -168,102 +197,75 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
         setHasSearchedPlaces(false);
         setIsHotelsExpanded(true);
         setInput('');
+        setChatTitle(null);
     }
 
-    const saveSessionData = async (msgs: Array<{ role: string, content: string }>, title?: string) => {
+    const saveSessionData = async (msgs: Array<{ role: string, content: string }>, eventName?: string) => {
+        // Use provided eventName or existing chatTitle
+        const titleToUse = eventName || chatTitle;
+
+        // ONLY save if we have a title (event was confirmed)
+        if (!titleToUse) return;
+
+        // Update chatTitle state if a new event name is provided
+        if (eventName && eventName !== chatTitle) {
+            setChatTitle(eventName);
+        }
+
+        console.log('Saving chat:', { sessionId, titleToUse, messageCount: msgs.length, msgs });
+
+        // User requested NOT to save conversation history, only context.
+        // We pass empty array for messages to saveChat/saveSessionLocal so history is not persisted causing a "fresh" start on reload.
+        const messagesToSave: any[] = [];
+
         // DB Save
         if (session?.user) {
-            // Need to determine title if not provided
-            // Getting existing title if not provided is tricky without state, but we can assume 'New Chat' or parse msg
-            let preview = title;
-            if (!preview) {
-                preview = msgs.find(m => m.role === 'user')?.content.substring(0, 30) || 'New Chat';
-                // If we have an existing DB chat, we probably shouldn't overwrite title with message preview unless it's new.
-                // actions.ts saveChat handles update. If we pass undefined/null title, we might want to keep existing?
-                // My saveChat action updates title if provided. 
-                // Let's rely on action: saveChat(id, title, ...)
-            }
-
-            // We need to pass data (events, itinerary)
             const metaData = {
                 events,
-                itinerary
+                itinerary,
+                selectedEvent
             };
-
-            // If title is undefined, we pass 'New Chat' or generated one? 
-            // Ideally we only update title if it's a NEW confirmed event or user rename.
-            // If just saving messages, we might want to keep current title.
-            // But we don't know current title here easily without fetching.
-            // For now, if no title passed, generate from message.
-
-            // Wait! If title is NOT passed, it means it's an auto-save.
-            // We shouldn't overwrite a custom title with "New Chat".
-            // My saveChat action: if I pass a title, it updates it.
-            // I should modify saveSessionData to fetch existing value? Or modify acton to accept optional title.
-
-            // Let's assume title is REQUIRED for "Confirmation", otherwise ignore?
-            // Or use a special flag.
-
-            // Simplification: 
-            const derivedTitle = title || msgs.find(m => m.role === 'user')?.content.substring(0, 30) || 'New Chat';
-
-            await saveChat(sessionId, derivedTitle, msgs, metaData);
+            const result = await saveChat(sessionId, titleToUse, messagesToSave, metaData);
+            console.log('DB save result:', result);
         } else {
             // LocalStorage Save
-            saveSessionLocal(msgs, title);
+            saveSessionLocal(messagesToSave, titleToUse);
         }
+
+        // Trigger sidebar refresh
+        window.dispatchEvent(new Event('storage'));
     };
 
-    const saveSessionLocal = (msgs: Array<{ role: string, content: string }>, title?: string) => {
-        // 1. Check if session exists or we are creating it (title provided)
+    const saveSessionLocal = (msgs: Array<{ role: string, content: string }>, eventName: string) => {
+        // ONLY save if we have an event name
+        if (!eventName) return;
+
         const existingDataStr = localStorage.getItem(`chat_session_${sessionId}`);
-
-        if (!title && !existingDataStr) {
-            return; // Don't save unconfirmed empty chats
-        }
-
         let existingData = existingDataStr ? JSON.parse(existingDataStr) : {};
 
-        // 2. Determine Title (Preview)
-        let preview = title;
-        if (!preview) {
-            preview = existingData.preview;
-            if (!preview || preview === 'New Chat') {
-                preview = msgs.find(m => m.role === 'user')?.content.substring(0, 30) || 'New Chat';
-            }
-        }
-
-        // 3. Preserve Pinned State if exists
+        // Preserve Pinned State if exists
         const isPinned = existingData.isPinned || false;
 
         const data = {
             id: sessionId,
             messages: msgs,
-            events, // Save context
+            events,
             itinerary,
-            preview: preview,
+            selectedEvent,
+            preview: eventName,
             isPinned: isPinned,
-            timestamp: existingData.timestamp || Date.now()
+            timestamp: Date.now()
         };
 
-        if (msgs.length !== existingData.messages?.length) {
-            data.timestamp = Date.now();
-        }
-
         localStorage.setItem(`chat_session_${sessionId}`, JSON.stringify(data));
-        window.dispatchEvent(new Event('storage'));
     };
 
-    // Auto-save on message change
+    // Auto-save messages ONLY if chat is confirmed (has a title)
     useEffect(() => {
-        if (messages.length > 0) {
+        if (chatTitle && messages.length > 0) {
             saveSessionData(messages);
         }
-    }, [messages, sessionId, session]); // session dep added
-
-
-
-    const [itinerary, setItinerary] = useState<Array<Event | Place>>([]);
+    }, [messages, chatTitle, itinerary, selectedEvent]);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -444,8 +446,9 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
         const newMessages = [...messages, eventMessage];
         setMessages(newMessages);
 
-        // SAVE SESSION IMMEDIATELY with Event Name
-        saveSessionData(newMessages, event.name);
+        // Set chat title to event name - this triggers the auto-save useEffect
+        // once state updates are processed (including selectedEvent)
+        setChatTitle(event.name);
 
         sendToAI(newMessages);
     };
@@ -822,19 +825,14 @@ Goal: A complete, optimized itinerary plan.
                         <div className="p-3 flex-1 min-w-0">
                             <h4 className="font-bold text-gray-800 dark:text-gray-100 truncate">{place.name}</h4>
                             <div className="flex items-center gap-2 text-sm flex-wrap mt-1">
-                                {isHotel && place.rating > 0 && (
+                                {place.rating > 0 && (
                                     <span className="text-yellow-500 font-semibold tracking-wide">
                                         {'★'.repeat(Math.round(place.rating))}{'☆'.repeat(5 - Math.round(place.rating))}
                                         <span className="text-gray-400 font-normal ml-1">({place.rating})</span>
-                                    </span>
-                                )}
-                                {!isHotel && place.rating > 0 && (
-                                    <>
-                                        <span className="text-yellow-500">⭐ {place.rating}</span>
                                         {place.userRatingsTotal > 0 && (
-                                            <span className="text-gray-400">({place.userRatingsTotal})</span>
+                                            <span className="text-gray-400 font-normal ml-1">• {place.userRatingsTotal} reviews</span>
                                         )}
-                                    </>
+                                    </span>
                                 )}
                             </div>
 
@@ -952,9 +950,25 @@ Goal: A complete, optimized itinerary plan.
                     {/* Chat Messages */}
                     <div className="space-y-4 mb-4 flex-grow">
                         {messages.length === 0 && (
-                            <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-                                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-2">🎫 Event Trip Planner</h2>
-                                <p>Tell me about an event or artist you want to see!</p>
+                            <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 dark:text-gray-400 py-8">
+                                <div className="mb-4 animate-bounce-slow">
+                                    {/* Simple Gopher Icon */}
+                                    <svg width="80" height="80" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        {/* Head/Body */}
+                                        <rect x="25" y="30" width="50" height="70" rx="25" fill="#10B981" />
+                                        {/* Ears */}
+                                        <circle cx="25" cy="40" r="10" fill="#10B981" />
+                                        <circle cx="25" cy="40" r="5" fill="#A7F3D0" />
+                                        <circle cx="75" cy="40" r="10" fill="#10B981" />
+                                        <circle cx="75" cy="40" r="5" fill="#A7F3D0" />
+                                        {/* Face Details */}
+                                        <circle cx="40" cy="55" r="4" fill="#064E3B" />
+                                        <circle cx="60" cy="55" r="4" fill="#064E3B" />
+                                        <ellipse cx="50" cy="65" rx="8" ry="5" fill="#047857" />
+                                        <rect x="46" y="68" width="8" height="6" rx="1" fill="white" />
+                                    </svg>
+                                </div>
+                                <p className="text-lg font-medium text-gray-700 dark:text-gray-200">Tell me about an event or artist you want to see!</p>
                                 <p className="text-sm mt-2">Example: "I want to see Taylor Swift" or "Find Lakers games"</p>
                             </div>
                         )}
@@ -1199,9 +1213,8 @@ Goal: A complete, optimized itinerary plan.
                         </>
                     )}
 
-                    {/* Input Area (Sticky Bottom on Mobile) */}
-                    {/* Input Area (Sticky Bottom on Mobile) */}
-                    <div className="sticky bottom-0 bg-gray-50 dark:bg-gray-950 pt-2 pb-4 mt-auto transition-colors">
+                    {/* Input Area */}
+                    <div className="sticky bottom-0 pt-2 pb-4 mt-auto bg-transparent">
                         {waitingForConfirmation === 'hotels' ? (
                             <div className="flex flex-col items-center justify-center py-2 animate-fadeIn bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 transition-colors">
                                 <p className="mb-3 font-semibold text-gray-700 dark:text-gray-200">Would you like to search for hotels nearby?</p>
@@ -1473,7 +1486,7 @@ Goal: A complete, optimized itinerary plan.
                                     <input
                                         className="flex-1 p-3 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm placeholder-gray-500 dark:placeholder-gray-400"
                                         value={input}
-                                        placeholder="Chat (e.g., 'Find hotels')..."
+                                        placeholder="Type here..."
                                         onChange={(e) => setInput(e.target.value)}
                                         disabled={isLoading}
                                         autoFocus
@@ -1508,10 +1521,10 @@ Goal: A complete, optimized itinerary plan.
                 </div>
 
                 {/* Itinerary Section - Below the map */}
-                <div className="h-[40%] overflow-y-auto bg-white dark:bg-gray-900 border-t border-gray-300 dark:border-gray-700">
+                <div className="h-[40%] overflow-y-auto bg-emerald-50 dark:bg-emerald-950 border-t border-gray-300 dark:border-gray-700">
                     {(itinerary.length > 0 || selectedEvent) ? (
-                        <div className="p-4 bg-emerald-50 dark:bg-emerald-950 h-full">
-                            <div className="sticky top-0 bg-emerald-50 dark:bg-emerald-950 py-2 flex justify-between items-center mb-3">
+                        <div className="p-4 min-h-full">
+                            <div className="sticky top-0 bg-emerald-50 dark:bg-emerald-950 py-2 flex justify-between items-center mb-3 z-20">
                                 <h3 className="font-bold text-emerald-800 dark:text-emerald-200">📋 Your Itinerary</h3>
                                 <button
                                     onClick={handleItinerarySubmission}
@@ -1533,6 +1546,7 @@ Goal: A complete, optimized itinerary plan.
                                 {itinerary.map((item, idx) => {
                                     const isRestaurant = 'types' in item && !item.types.includes('lodging');
                                     const isHotel = 'types' in item && (item.types.includes('lodging') || item.types.includes('hotel'));
+                                    const itemAsPlace = item as Place;
                                     return (
                                         <div key={idx} className="flex items-center gap-2 p-2 rounded border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
                                             <span className="text-lg">
@@ -1540,9 +1554,12 @@ Goal: A complete, optimized itinerary plan.
                                             </span>
                                             <div className="flex-1">
                                                 <p className="font-semibold text-sm text-gray-800 dark:text-gray-100">{item.name}</p>
-                                                <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                    {'rating' in item && `⭐ ${(item as Place).rating}`}
-                                                </p>
+                                                {'rating' in item && itemAsPlace.rating > 0 && (
+                                                    <p className="text-xs text-yellow-500">
+                                                        {'★'.repeat(Math.round(itemAsPlace.rating))}{'☆'.repeat(5 - Math.round(itemAsPlace.rating))}
+                                                        <span className="text-gray-400 ml-1">({itemAsPlace.rating})</span>
+                                                    </p>
+                                                )}
                                                 <div className="flex flex-wrap gap-2 mt-1">
                                                     {isHotel && (
                                                         <>
@@ -1602,7 +1619,7 @@ Goal: A complete, optimized itinerary plan.
                 </div>
             </div>
 
-            {/* Mobile View Toggle (Optional - For now map is hidden on mobile or stacked if we change hidden lg:block) */}
+            {/* Mobile View Toggle (Optional) */}
         </div>
     );
     // Assuming this is a functional component, the extra braces are removed.

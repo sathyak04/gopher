@@ -14,9 +14,15 @@ export async function getChats() {
     const userChats = await db.select()
         .from(chats)
         .where(eq(chats.userId, session.user.id))
-        .orderBy(desc(chats.updatedAt)) // Sort by newest, we handle pinning in frontend sorting or here
+        .orderBy(desc(chats.updatedAt))
 
-    return userChats.map(c => ({
+    // Sort pinned chats to top, then by timestamp
+    const sorted = userChats.sort((a, b) => {
+        if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+        return b.updatedAt.getTime() - a.updatedAt.getTime();
+    });
+
+    return sorted.map(c => ({
         id: c.id,
         preview: c.title,
         timestamp: c.updatedAt.getTime(),
@@ -28,9 +34,12 @@ export async function getChat(chatId: string) {
     const session = await auth()
     if (!session?.user?.id) return null
 
-    const chat = await db.query.chats.findFirst({
-        where: and(eq(chats.id, chatId), eq(chats.userId, session.user.id))
-    })
+    const chatsList = await db.select()
+        .from(chats)
+        .where(and(eq(chats.id, chatId), eq(chats.userId, session.user.id)))
+        .limit(1)
+
+    const chat = chatsList[0]
 
     if (!chat) return null
 
@@ -43,8 +52,13 @@ export async function getChat(chatId: string) {
     // Parse data (events, itinerary)
     let extraData = {}
     try {
-        if (chat.data) extraData = JSON.parse(chat.data)
-    } catch (e) { }
+        if (chat.data) {
+            extraData = JSON.parse(chat.data)
+            console.log(`[getChat] Parsed extra data for ${chatId}:`, Object.keys(extraData));
+        }
+    } catch (e) {
+        console.error(`[getChat] Failed to parse data for ${chatId}`, e);
+    }
 
     return {
         ...chat,
@@ -54,6 +68,7 @@ export async function getChat(chatId: string) {
 }
 
 export async function saveChat(chatId: string, title: string, msgs: any[], data: any, isPinned?: boolean) {
+    console.log(`[saveChat] Saving for ${chatId}, title: ${title}, keys: ${Object.keys(data)}`);
     const session = await auth()
     if (!session?.user?.id) return { error: "Not authenticated" }
 

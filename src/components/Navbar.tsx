@@ -10,7 +10,7 @@ interface NavbarProps {
 }
 
 const Navbar: React.FC<NavbarProps> = ({ onMenuClick, isDarkMode, toggleTheme }) => {
-    const { data: session } = useSession()
+    const { data: session, status } = useSession()
 
     return (
         <nav className="w-full bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 h-16 flex items-center justify-between px-4 shrink-0 z-50 shadow-sm relative transition-all duration-300">
@@ -31,6 +31,7 @@ const Navbar: React.FC<NavbarProps> = ({ onMenuClick, isDarkMode, toggleTheme })
             </h1>
 
             <div className="flex items-center gap-2">
+                {/* Theme Toggle */}
                 <button
                     onClick={toggleTheme}
                     className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition-colors"
@@ -46,12 +47,18 @@ const Navbar: React.FC<NavbarProps> = ({ onMenuClick, isDarkMode, toggleTheme })
                         </svg>
                     )}
                 </button>
-                {session?.user && (
+
+                {/* Sign Out Button - Always visible when authenticated (using status to ensure it shows immediately) */}
+                {(session?.user || status === 'authenticated') && (
                     <button
-                        onClick={() => signOut()}
-                        className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                        onClick={() => signOut({ callbackUrl: '/login' })}
+                        className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 dark:text-red-400 transition-colors"
+                        title="Sign Out"
                     >
-                        Sign Out
+                        {/* Logout/Door Icon */}
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
                     </button>
                 )}
             </div>

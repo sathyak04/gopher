@@ -80,7 +80,7 @@ export default function Home() {
                       We can't easily fade *half* the component from outside without passing a prop.
                       Let's pass `isSidebarOpen` to Chat as a prop `isSidebarOpen`.
                     */}
-                    {sessionId && <Chat sessionId={sessionId} isSidebarOpen={isSidebarOpen} isDarkMode={isDarkMode} />}
+                    {sessionId && <Chat key={sessionId} sessionId={sessionId} isSidebarOpen={isSidebarOpen} isDarkMode={isDarkMode} />}
                 </div>
             </div>
 
