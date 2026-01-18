@@ -602,9 +602,8 @@ export default function Chat() {
                         </div>
                     )}
 
-                    {/* ----- HOTELS SECTION (Always Visible) ----- */}
-                    {/* ----- HOTELS SECTION (Always Visible) ----- */}
-                    {hotelResults.length > 0 && (
+                    {/* ----- HOTELS SECTION (Show only when not in food mode) ----- */}
+                    {hotelResults.length > 0 && waitingForConfirmation !== 'food' && waitingForConfirmation !== 'food_filters' && (
                         <div className="mb-4 bg-white rounded-xl border border-gray-200 shadow-sm">
                             <div className="bg-gray-50 p-3 flex justify-between items-center border-b border-gray-200">
                                 <h3 className="font-bold text-gray-700 flex items-center gap-2">
@@ -692,8 +691,8 @@ export default function Chat() {
                         </div>
                     )}
 
-                    {/* ----- RESTAURANTS SECTION (Always Visible if populated) ----- */}
-                    {restaurantResults.length > 0 && (
+                    {/* ----- RESTAURANTS SECTION (Show only when not in hotel mode) ----- */}
+                    {restaurantResults.length > 0 && waitingForConfirmation !== 'hotels' && waitingForConfirmation !== 'hotels_filters' && (
                         <div className="mb-6">
                             <div className="flex justify-between items-end mb-3">
                                 <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
@@ -702,92 +701,18 @@ export default function Chat() {
                                         {restaurantResults.length} found
                                     </span>
                                 </h3>
-                                <span className="text-xs text-orange-600 font-bold bg-orange-50 px-2 py-1 rounded border border-orange-100">
-                                    {foodFilters.cuisine || 'All'} • {(foodFilters.radius / 1600).toFixed(1)} mi
-                                </span>
+                                <button
+                                    onClick={() => setWaitingForConfirmation('food_filters')}
+                                    className="text-xs text-orange-600 font-bold bg-orange-50 px-3 py-1.5 rounded border border-orange-200 hover:bg-orange-100 hover:border-orange-300 transition-colors flex items-center gap-1"
+                                >
+                                    🔧 Filters: {foodFilters.cuisine || 'All'} • {(foodFilters.radius / 1600).toFixed(1)} mi
+                                </button>
                             </div>
 
                             {renderPlacesGrid(restaurantResults, false)}
                         </div>
                     )}
 
-
-                    {/* Itinerary */}
-                    {(itinerary.length > 0 || selectedEvent) && (
-                        <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
-                            <h3 className="font-bold text-purple-800 mb-3">📋 Your Itinerary</h3>
-                            <div className="space-y-2">
-                                {selectedEvent && (
-                                    <div className="flex items-center gap-2 p-2 bg-white rounded border">
-                                        <span className="text-lg">🎫</span>
-                                        <div className="flex-1">
-                                            <p className="font-semibold text-sm">{selectedEvent.name}</p>
-                                            <p className="text-xs text-gray-500">{selectedEvent.venue}</p>
-                                        </div>
-                                    </div>
-                                )}
-                                {itinerary.map((item, idx) => {
-                                    const isRestaurant = 'types' in item && !item.types.includes('lodging');
-                                    const isHotel = 'types' in item && (item.types.includes('lodging') || item.types.includes('hotel'));
-                                    return (
-                                        <div key={idx} className="flex items-center gap-2 p-2 rounded border bg-white">
-                                            <span className="text-lg">
-                                                {item.types?.includes('lodging') || item.types?.includes('hotel') ? '🏠' : '🍽️'}
-                                            </span>
-                                            <div className="flex-1">
-                                                <p className="font-semibold text-sm">{item.name}</p>
-                                                <p className="text-xs text-gray-500">
-                                                    {'rating' in item && `⭐ ${(item as Place).rating}`}
-                                                </p>
-                                                <div className="flex flex-wrap gap-2 mt-1">
-                                                    {isHotel && (
-                                                        <>
-                                                            <a
-                                                                href={`https://www.expedia.com/Hotel-Search?destination=${encodeURIComponent(item.name + ' ' + (item.address || ''))}`}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="inline-block bg-blue-600 text-white text-[10px] px-2 py-1 rounded hover:bg-blue-700 transition-colors"
-                                                                onClick={(e) => e.stopPropagation()}
-                                                            >
-                                                                Book on Expedia ↗
-                                                            </a>
-                                                            <a
-                                                                href={`https://www.google.com/search?q=${encodeURIComponent(item.name + ' ' + (item.address || '') + ' reviews')}`}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="inline-block bg-orange-600 text-white text-[10px] px-2 py-1 rounded hover:bg-orange-700 transition-colors"
-                                                                onClick={(e) => e.stopPropagation()}
-                                                            >
-                                                                Google Reviews ↗
-                                                            </a>
-                                                        </>
-                                                    )}
-                                                    {isRestaurant && (
-                                                        <a
-                                                            href={`https://www.google.com/search?q=${encodeURIComponent(item.name + ' ' + (item.address || '') + ' reviews')}`}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="inline-block bg-orange-600 text-white text-[10px] px-2 py-1 rounded hover:bg-orange-700 transition-colors"
-                                                            onClick={(e) => e.stopPropagation()}
-                                                        >
-                                                            Google Reviews ↗
-                                                        </a>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <button
-                                                onClick={() => removeFromItinerary(item.id)}
-                                                className="text-gray-400 hover:text-red-500 p-1"
-                                                title="Remove from itinerary"
-                                            >
-                                                ✕
-                                            </button>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
 
                     {/* Input Area (Sticky Bottom on Mobile) */}
                     <div className="sticky bottom-0 bg-white pt-2 pb-4 border-t border-gray-200 mt-auto">
@@ -975,22 +900,111 @@ export default function Chat() {
                 </div>
             </div>
 
-            {/* RIGHT PANEL: Map View (Sticky/Fixed on Desktop) */}
-            <div className="hidden lg:block w-1/2 h-full bg-gray-200 border-l border-gray-300 relative">
-                <MapView
-                    events={events}
-                    places={
-                        waitingForConfirmation === 'food' || waitingForConfirmation === 'food_filters'
-                            ? restaurantResults
-                            : waitingForConfirmation === 'hotels' || waitingForConfirmation === 'hotels_filters'
-                                ? hotelResults
-                                : [...hotelResults, ...restaurantResults]
-                    }
-                    selectedEvent={selectedEvent}
-                    selectedPlace={selectedPlace}
-                    itinerary={itinerary}
-                    onSelectPlace={handlePlaceSelect}
-                />
+            {/* RIGHT PANEL: Map View + Itinerary (Desktop) */}
+            <div className="hidden lg:flex lg:flex-col w-1/2 h-full bg-gray-200 border-l border-gray-300">
+                {/* Map Section - Takes ~60% of height */}
+                <div className="h-[60%] relative">
+                    <MapView
+                        events={events}
+                        places={
+                            waitingForConfirmation === 'food' || waitingForConfirmation === 'food_filters'
+                                ? restaurantResults
+                                : waitingForConfirmation === 'hotels' || waitingForConfirmation === 'hotels_filters'
+                                    ? hotelResults
+                                    : [...hotelResults, ...restaurantResults]
+                        }
+                        selectedEvent={selectedEvent}
+                        selectedPlace={selectedPlace}
+                        itinerary={itinerary}
+                        onSelectPlace={handlePlaceSelect}
+                    />
+                </div>
+
+                {/* Itinerary Section - Below the map */}
+                <div className="h-[40%] overflow-y-auto bg-white border-t border-gray-300">
+                    {(itinerary.length > 0 || selectedEvent) ? (
+                        <div className="p-4 bg-purple-50 h-full">
+                            <h3 className="font-bold text-purple-800 mb-3 sticky top-0 bg-purple-50 py-2">📋 Your Itinerary</h3>
+                            <div className="space-y-2">
+                                {selectedEvent && (
+                                    <div className="flex items-center gap-2 p-2 bg-white rounded border">
+                                        <span className="text-lg">🎫</span>
+                                        <div className="flex-1">
+                                            <p className="font-semibold text-sm">{selectedEvent.name}</p>
+                                            <p className="text-xs text-gray-500">{selectedEvent.venue}</p>
+                                        </div>
+                                    </div>
+                                )}
+                                {itinerary.map((item, idx) => {
+                                    const isRestaurant = 'types' in item && !item.types.includes('lodging');
+                                    const isHotel = 'types' in item && (item.types.includes('lodging') || item.types.includes('hotel'));
+                                    return (
+                                        <div key={idx} className="flex items-center gap-2 p-2 rounded border bg-white">
+                                            <span className="text-lg">
+                                                {item.types?.includes('lodging') || item.types?.includes('hotel') ? '🏠' : '🍽️'}
+                                            </span>
+                                            <div className="flex-1">
+                                                <p className="font-semibold text-sm">{item.name}</p>
+                                                <p className="text-xs text-gray-500">
+                                                    {'rating' in item && `⭐ ${(item as Place).rating}`}
+                                                </p>
+                                                <div className="flex flex-wrap gap-2 mt-1">
+                                                    {isHotel && (
+                                                        <>
+                                                            <a
+                                                                href={`https://www.expedia.com/Hotel-Search?destination=${encodeURIComponent(item.name + ' ' + (item.address || ''))}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-block bg-blue-600 text-white text-[10px] px-2 py-1 rounded hover:bg-blue-700 transition-colors"
+                                                                onClick={(e) => e.stopPropagation()}
+                                                            >
+                                                                Book on Expedia ↗
+                                                            </a>
+                                                            <a
+                                                                href={`https://www.google.com/search?q=${encodeURIComponent(item.name + ' ' + (item.address || '') + ' reviews')}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-block bg-orange-600 text-white text-[10px] px-2 py-1 rounded hover:bg-orange-700 transition-colors"
+                                                                onClick={(e) => e.stopPropagation()}
+                                                            >
+                                                                Google Reviews ↗
+                                                            </a>
+                                                        </>
+                                                    )}
+                                                    {isRestaurant && (
+                                                        <a
+                                                            href={`https://www.google.com/search?q=${encodeURIComponent(item.name + ' ' + (item.address || '') + ' reviews')}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="inline-block bg-orange-600 text-white text-[10px] px-2 py-1 rounded hover:bg-orange-700 transition-colors"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            Google Reviews ↗
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => removeFromItinerary(item.id)}
+                                                className="text-gray-400 hover:text-red-500 p-1"
+                                                title="Remove from itinerary"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="h-full flex items-center justify-center text-gray-400">
+                            <div className="text-center">
+                                <p className="text-2xl mb-2">📋</p>
+                                <p className="text-sm">Your itinerary will appear here</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Mobile View Toggle (Optional - For now map is hidden on mobile or stacked if we change hidden lg:block) */}
