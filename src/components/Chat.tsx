@@ -1613,20 +1613,22 @@ Goal: A complete, optimized itinerary plan.
                         <div className="p-4 min-h-full">
                             <div className="sticky top-0 bg-emerald-50 dark:bg-emerald-950 py-2 flex justify-between items-center mb-3 z-20">
                                 <h3 className="font-bold text-emerald-800 dark:text-emerald-200">📋 Your Itinerary</h3>
-                                <button
-                                    onClick={handleItinerarySubmission}
-                                    className="text-xs font-bold text-white bg-emerald-600 px-3 py-1.5 rounded-full hover:bg-emerald-700 shadow-sm transition-all flex items-center gap-1 active:scale-95"
-                                >
-                                    ✨ Generate Schedule
-                                </button>
-                                {schedule.length > 0 && (
+                                <div className="flex items-center gap-2">
                                     <button
-                                        onClick={() => setIsScheduleOpen(true)}
-                                        className="text-xs font-bold text-emerald-700 bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-full hover:bg-emerald-200 shadow-sm transition-all flex items-center gap-1 active:scale-95 ml-2"
+                                        onClick={handleItinerarySubmission}
+                                        className="text-xs font-bold text-white bg-emerald-600 px-3 py-1.5 rounded-full hover:bg-emerald-700 shadow-sm transition-all flex items-center gap-1 active:scale-95"
                                     >
-                                        👁️ View Schedule
+                                        ✨ Generate Schedule
                                     </button>
-                                )}
+                                    {schedule.length > 0 && (
+                                        <button
+                                            onClick={() => setIsScheduleOpen(true)}
+                                            className="text-xs font-bold text-emerald-700 bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-full hover:bg-emerald-200 shadow-sm transition-all flex items-center gap-1 active:scale-95"
+                                        >
+                                            👁️ View Schedule
+                                        </button>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Schedule Popup Modal */}
@@ -1649,7 +1651,7 @@ Goal: A complete, optimized itinerary plan.
                                                 <div key={i} className="flex gap-4 relative">
                                                     {/* Timeline Line */}
                                                     {i !== schedule.length - 1 && (
-                                                        <div className="absolute left-[85px] top-8 bottom-[-24px] w-0.5 bg-gray-200 dark:bg-gray-700"></div>
+                                                        <div className="absolute left-[93px] top-12 bottom-[-24px] w-0.5 bg-gray-200 dark:bg-gray-700"></div>
                                                     )}
 
                                                     <div className="w-[85px] flex-shrink-0 text-right">
