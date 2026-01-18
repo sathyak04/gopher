@@ -53,6 +53,7 @@ const PlaceImage = ({ place }: { place: Place }) => {
 
     if (place.photo && !imgError) {
         return (
+            /* eslint-disable-next-line @next/next/no-img-element */
             <img
                 src={place.photo}
                 alt={place.name}
@@ -95,8 +96,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode, openSchedul
     const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
     const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
 
-    // UI State for Collapsible Sections
-    const [isHotelsExpanded, setIsHotelsExpanded] = useState(true);
+
 
     // Updated States for Advanced Filters
     const [waitingForConfirmation, setWaitingForConfirmation] = useState<'event' | 'hotels' | 'hotels_filters' | 'food' | 'food_filters' | 'explore' | 'explore_filters' | null>(null);
@@ -144,18 +144,20 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode, openSchedul
                 if (dbChat) {
                     console.log('Loading chat from DB:', dbChat);
 
-                    // Restore Context
-                    if (dbChat.events) setEvents(dbChat.events);
-                    if (dbChat.itinerary) setItinerary(dbChat.itinerary);
-                    if (dbChat.schedule) setSchedule(dbChat.schedule);
-                    if (dbChat.selectedEvent) setSelectedEvent(dbChat.selectedEvent);
-                    if (dbChat.title) setChatTitle(dbChat.title);
+                    // Restore Context - cast to any since extraData is spread dynamically
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const chatData = dbChat as any;
+                    if (chatData.events) setEvents(chatData.events);
+                    if (chatData.itinerary) setItinerary(chatData.itinerary);
+                    if (chatData.schedule) setSchedule(chatData.schedule);
+                    if (chatData.selectedEvent) setSelectedEvent(chatData.selectedEvent);
+                    if (chatData.title) setChatTitle(chatData.title);
 
                     // Generate Welcome Back Message based on context
-                    if (dbChat.title) {
+                    if (chatData.title) {
                         setMessages([{
                             role: 'assistant',
-                            content: `Welcome back! I've loaded your itinerary for **${dbChat.title}**. You can add more hotels, find food, or generate your schedule.`
+                            content: `Welcome back! I've loaded your itinerary for **${chatData.title}**. You can add more hotels, find food, or generate your schedule.`
                         }]);
                     } else {
                         // Should not happen for confirmed chats, but fallback
@@ -223,7 +225,6 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode, openSchedul
         setWaitingForConfirmation(null);
         setHasSearchedEvents(false);
         setHasSearchedPlaces(false);
-        setIsHotelsExpanded(true);
         setInput('');
         setChatTitle(null);
     }
@@ -244,6 +245,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode, openSchedul
 
         // User requested NOT to save conversation history, only context.
         // We pass empty array for messages to saveChat/saveSessionLocal so history is not persisted causing a "fresh" start on reload.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const messagesToSave: any[] = [];
 
         // DB Save
@@ -270,7 +272,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode, openSchedul
         if (!eventName) return;
 
         const existingDataStr = localStorage.getItem(`chat_session_${sessionId}`);
-        let existingData = existingDataStr ? JSON.parse(existingDataStr) : {};
+        const existingData = existingDataStr ? JSON.parse(existingDataStr) : {};
 
         // Preserve Pinned State if exists
         const isPinned = existingData.isPinned || false;
@@ -295,6 +297,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode, openSchedul
         if (isLoaded && chatTitle && messages.length > 0 && isDirtyRef.current) {
             saveSessionData(messages);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [messages, chatTitle, itinerary, schedule, selectedEvent, isLoaded]);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -344,10 +347,10 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode, openSchedul
 
         if (isHotelSearch) {
             setHotelResults([]);
-            setIsHotelsExpanded(true); // Auto-expand when searching hotels
+            // Auto-expand when searching hotels
         } else {
             setRestaurantResults([]);
-            setIsHotelsExpanded(false); // Auto-collapse hotels when searching food
+            // Auto-collapse hotels when searching food
         }
 
         try {
@@ -363,6 +366,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode, openSchedul
                 const data = await response.json();
 
                 if (data.places) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const googlePlaces = data.places.map((p: any) => ({ ...p }));
                     allPlaces.push(...googlePlaces);
                 }
@@ -395,6 +399,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode, openSchedul
             }
 
             const paramsStr = placesMatch[1];
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const params: any = { type: 'restaurant', radius: 1500 };
 
             // Parse parameters
@@ -752,7 +757,7 @@ Goal: A complete, optimized itinerary plan.
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let assistantMessage = { role: 'assistant', content: '' };
+            const assistantMessage = { role: 'assistant', content: '' };
             let fullResponse = '';
             let searchTriggered = false;
             let placesTriggered = false;
@@ -850,7 +855,6 @@ Goal: A complete, optimized itinerary plan.
         // 2. Hotels Automation
         else if (lowerInput.includes('find') && (lowerInput.includes('hotel') || lowerInput.includes('lodging'))) {
             setWaitingForConfirmation('hotels_filters');
-            setIsHotelsExpanded(true);
         }
         // 3. Food Automation
         else if (lowerInput.includes('find') && (lowerInput.includes('food') || lowerInput.includes('restaurant'))) {
@@ -1005,7 +1009,7 @@ Goal: A complete, optimized itinerary plan.
             // We want to extract 'Mexican'.
             const match = content.match(/Find me (.+) near/i);
             if (match) {
-                let captured = match[1].trim();
+                const captured = match[1].trim();
                 // Strip "restaurants" or "food" if present to get raw cuisine
                 cuisine = captured.replace(/restaurants|restaurant|food/gi, '').trim();
             }
@@ -1056,7 +1060,7 @@ Goal: A complete, optimized itinerary plan.
                                     </svg>
                                 </div>
                                 <p className="text-lg font-medium text-gray-700 dark:text-gray-200">Tell me about an event or artist you want to see!</p>
-                                <p className="text-sm mt-2">Example: "I want to see Taylor Swift" or "Find Lakers games"</p>
+                                <p className="text-sm mt-2">Example: &quot;I want to see Taylor Swift&quot; or &quot;Find Lakers games&quot;</p>
                             </div>
                         )}
                         {messages.map((m, index) => {
@@ -1116,6 +1120,7 @@ Goal: A complete, optimized itinerary plan.
                                             }`}
                                     >
                                         {event.image && (
+                                            /* eslint-disable-next-line @next/next/no-img-element */
                                             <img src={event.image} alt={event.name} className="w-full sm:w-32 h-32 object-cover" />
                                         )}
                                         <div className="p-3 flex-1 min-w-0">
@@ -1180,6 +1185,7 @@ Goal: A complete, optimized itinerary plan.
                                                 className={`bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 overflow-hidden flex flex-col sm:flex-row ${selectedPlace?.id === place.id ? 'border-green-500 ring-2 ring-green-300 transform scale-[1.01]' : 'border-transparent dark:border-gray-700 hover:border-green-500'}`}
                                             >
                                                 {place.photo ? (
+                                                    /* eslint-disable-next-line @next/next/no-img-element */
                                                     <img src={place.photo} alt={place.name} className="w-full sm:w-32 h-32 object-cover" />
                                                 ) : (
                                                     <div className="w-full sm:w-32 h-32 bg-gray-200 flex items-center justify-center text-4xl">
@@ -1458,7 +1464,7 @@ Goal: A complete, optimized itinerary plan.
                                         onClick={() => confirmExplore(false)}
                                         className="bg-gray-400 hover:bg-gray-500 text-white px-6 py-2 rounded-full font-bold transition-all"
                                     >
-                                        No, I'm done
+                                        No, I&apos;m done
                                     </button>
                                 </div>
                             </div>
