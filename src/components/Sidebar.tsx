@@ -15,9 +15,10 @@ interface SidebarProps {
     currentSessionId: string;
     onSelectSession: (id: string) => void;
     onNewChat: () => void;
+    onViewSchedule: (id: string) => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ isOpen, currentSessionId, onSelectSession, onNewChat }) => {
+const Sidebar: React.FC<SidebarProps> = ({ isOpen, currentSessionId, onSelectSession, onNewChat, onViewSchedule }) => {
     const { data: session } = useSession()
     const [sessions, setSessions] = useState<ChatSession[]>([]);
     const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
@@ -200,6 +201,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, currentSessionId, onSelectSes
                                         >
                                             ⋮
                                         </div>
+
                                     </button>
                                 )}
 
@@ -210,22 +212,32 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, currentSessionId, onSelectSes
                                         className="absolute right-0 top-8 w-32 bg-white dark:bg-gray-800 rounded-lg shadow-xl z-50 overflow-hidden border border-gray-200 dark:border-gray-700 animate-fadeIn"
                                     >
                                         <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onViewSchedule(session.id);
+                                                setActiveMenuId(null);
+                                            }}
+                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                                        >
+                                            Schedule
+                                        </button>
+                                        <button
                                             onClick={(e) => handlePin(e, session.id, !!session.isPinned)}
                                             className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
                                         >
-                                            {session.isPinned ? '🚫 Unpin' : '📌 Pin'}
+                                            {session.isPinned ? 'Unpin' : 'Pin'}
                                         </button>
                                         <button
                                             onClick={(e) => startRenaming(e, session)}
                                             className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
                                         >
-                                            ✏️ Rename
+                                            Rename
                                         </button>
                                         <button
                                             onClick={(e) => handleDelete(e, session.id)}
                                             className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 border-t border-gray-100 dark:border-gray-700"
                                         >
-                                            🗑️ Delete
+                                            Delete
                                         </button>
                                     </div>
                                 )}

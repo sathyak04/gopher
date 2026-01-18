@@ -9,6 +9,7 @@ export default function Home() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [sessionId, setSessionId] = useState('');
     const [isDarkMode, setIsDarkMode] = useState(false);
+    const [openScheduleTrigger, setOpenScheduleTrigger] = useState(0);
 
     useEffect(() => {
         // Initialize theme from localStorage or system pref
@@ -62,6 +63,12 @@ export default function Home() {
                 currentSessionId={sessionId}
                 onSelectSession={handleSelectSession}
                 onNewChat={handleNewChat}
+                onViewSchedule={(id) => {
+                    setSessionId(id);
+                    setIsSidebarOpen(false);
+                    // Minimal delay to ensure Chat mounts if switching, then trigger open
+                    setTimeout(() => setOpenScheduleTrigger(Date.now()), 100);
+                }}
             />
 
             <div
@@ -80,7 +87,7 @@ export default function Home() {
                       We can't easily fade *half* the component from outside without passing a prop.
                       Let's pass `isSidebarOpen` to Chat as a prop `isSidebarOpen`.
                     */}
-                    {sessionId && <Chat key={sessionId} sessionId={sessionId} isSidebarOpen={isSidebarOpen} isDarkMode={isDarkMode} />}
+                    {sessionId && <Chat key={sessionId} sessionId={sessionId} isSidebarOpen={isSidebarOpen} isDarkMode={isDarkMode} openScheduleTrigger={openScheduleTrigger} />}
                 </div>
             </div>
 

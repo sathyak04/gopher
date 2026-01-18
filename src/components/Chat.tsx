@@ -75,9 +75,10 @@ interface ChatProps {
     sessionId: string;
     isSidebarOpen: boolean;
     isDarkMode: boolean;
+    openScheduleTrigger?: number;
 }
 
-export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps) {
+export default function Chat({ sessionId, isSidebarOpen, isDarkMode, openScheduleTrigger }: ChatProps) {
     const [messages, setMessages] = useState<Array<{ role: string, content: string }>>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -114,13 +115,26 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
 
     // Itinerary state - moved here to be available in save functions
     const [itinerary, setItinerary] = useState<Array<Event | Place>>([]);
+    const [schedule, setSchedule] = useState<Array<{ time: string, activity: string, description: string }>>([]);
+    const [isScheduleOpen, setIsScheduleOpen] = useState(false);
 
     // Track if this chat has been confirmed with an event name
     const [chatTitle, setChatTitle] = useState<string | null>(null);
+    // Track if initial load is complete to prevent overwriting DB with empty state
+    const [isLoaded, setIsLoaded] = useState(false);
+    // Track if user has modified state to preventing saving on load
+    const isDirtyRef = useRef(false);
 
+
+    // --- Effect: Open Schedule from Sidebar Trigger ---
+    useEffect(() => {
+        if (openScheduleTrigger && openScheduleTrigger > 0) {
+            setIsScheduleOpen(true);
+        }
+    }, [openScheduleTrigger]);
 
     // --- Session Management ---
-    const { data: session } = useSession();
+    const { data: session, status } = useSession();
 
     useEffect(() => {
         // Load messages for this session
@@ -133,6 +147,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
                     // Restore Context
                     if (dbChat.events) setEvents(dbChat.events);
                     if (dbChat.itinerary) setItinerary(dbChat.itinerary);
+                    if (dbChat.schedule) setSchedule(dbChat.schedule);
                     if (dbChat.selectedEvent) setSelectedEvent(dbChat.selectedEvent);
                     if (dbChat.title) setChatTitle(dbChat.title);
 
@@ -146,9 +161,11 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
                         // Should not happen for confirmed chats, but fallback
                         setMessages([]);
                     }
+                    setIsLoaded(true);
                 } else {
                     // DB chat not found - treat as new
                     resetState();
+                    setIsLoaded(true); // Ready to save new stuff
                 }
             } else {
                 // LocalStorage Fallback
@@ -158,28 +175,38 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
                         const parsed = JSON.parse(savedData);
                         if (parsed.events) setEvents(parsed.events);
                         if (parsed.itinerary) setItinerary(parsed.itinerary);
+                        if (parsed.schedule) setSchedule(parsed.schedule);
                         if (parsed.selectedEvent) setSelectedEvent(parsed.selectedEvent);
                         if (parsed.preview) setChatTitle(parsed.preview);
 
-                        // Generate Welcome Back Message
-                        if (parsed.preview) {
+                        // If it has a title, it's a confirmed chat. Generate fresh context if needed/wanted.
+                        // For local storage, user might want history?
+                        // Current logic: persist history in localStorage?
+                        // The 'saveSessionLocal' saves 'messages'.
+                        // Let's load them if they exist for continuity in guest mode
+                        if (parsed.messages && parsed.messages.length > 0) {
+                            setMessages(parsed.messages);
+                        } else if (parsed.preview) {
                             setMessages([{
                                 role: 'assistant',
-                                content: `Welcome back! I've loaded your itinerary for **${parsed.preview}**. You can add more hotels, find food, or generate your schedule.`
+                                content: `Welcome back! I've loaded your itinerary for **${parsed.preview}**.`
                             }]);
-                        } else {
-                            setMessages([]);
                         }
                     } catch (e) {
-                        console.error('Failed to load session', e);
+                        console.error('Failed to parse local session', e);
                     }
                 } else {
                     resetState();
                 }
+                setIsLoaded(true);
             }
+        };
+
+        if (status !== 'loading') {
+            load();
         }
-        load();
-    }, [sessionId, session]); // Reload if session changes (login)
+
+    }, [sessionId, session, status]); // Reload if session changes (login)
 
 
 
@@ -187,6 +214,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
         setMessages([]);
         setEvents([]);
         setItinerary([]);
+        setSchedule([]);
         setHotelResults([]);
         setRestaurantResults([]);
         setExploreResults([]);
@@ -223,6 +251,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
             const metaData = {
                 events,
                 itinerary,
+                schedule,
                 selectedEvent
             };
             const result = await saveChat(sessionId, titleToUse, messagesToSave, metaData);
@@ -251,6 +280,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
             messages: msgs,
             events,
             itinerary,
+            schedule,
             selectedEvent,
             preview: eventName,
             isPinned: isPinned,
@@ -260,12 +290,12 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
         localStorage.setItem(`chat_session_${sessionId}`, JSON.stringify(data));
     };
 
-    // Auto-save messages ONLY if chat is confirmed (has a title)
+    // Auto-save messages ONLY if chat is confirmed (has a title) AND fully loaded AND user has interacted (dirty)
     useEffect(() => {
-        if (chatTitle && messages.length > 0) {
+        if (isLoaded && chatTitle && messages.length > 0 && isDirtyRef.current) {
             saveSessionData(messages);
         }
-    }, [messages, chatTitle, itinerary, selectedEvent]);
+    }, [messages, chatTitle, itinerary, schedule, selectedEvent, isLoaded]);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -280,6 +310,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
     const searchEvents = async (keyword: string) => {
         setIsSearchingEvents(true);
         setHasSearchedEvents(false);
+        isDirtyRef.current = true;
         try {
             const response = await fetch(`/api/events?keyword=${encodeURIComponent(keyword)}`);
             const data = await response.json();
@@ -431,6 +462,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
 
     const handleEventConfirm = (event: Event) => {
         console.log('Confirmed event:', event);
+        isDirtyRef.current = true;
         setSelectedEvent(event);
         setHighlightedEventId(null);
         setEvents([]); // Hide list
@@ -459,6 +491,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
 
     const handlePlaceConfirm = (place: Place) => {
         // Add to itinerary
+        isDirtyRef.current = true;
         setItinerary(prev => [...prev, place]);
         setSelectedPlace(null);
 
@@ -502,7 +535,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
             setFoodFilters(prev => ({ ...prev, locationPreference: 'venue', radius: 1600, cuisine: '' }));
         } else {
             setWaitingForConfirmation(null);
-            handleQuickReply("No thanks, I'm good on food.");
+            handleQuickReply("No thanks. (If you change your mind, click 'Find Food' or type 'find food'.)");
         }
     };
 
@@ -547,7 +580,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
             setExploreFilters(prev => ({ ...prev, locationPreference: 'venue', radius: 8000, activity: '' }));
         } else {
             setWaitingForConfirmation(null);
-            handleQuickReply("No thanks, I'm done planning.");
+            handleQuickReply("No thanks. (If you change your mind, click 'Explore' or type 'explore'.)");
         }
     };
 
@@ -645,6 +678,7 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode }: ChatProps
 
 
     const removeFromItinerary = (id: string) => {
+        isDirtyRef.current = true;
         setItinerary(prev => prev.filter(item => item.id !== id));
     };
 
@@ -678,16 +712,30 @@ Please create a detailed, time-based schedule for my trip.
 - Suggest logical gaps where I might need rest or additional activities.
 - Ensure I arrive at the main event on time.
 - If I'm missing meals or a hotel, please politely suggest adding them.
-- Be conversational and ask for my feedback if you're unsure about timing.
-
+- Be conversational in your main response, but DO NOT list the full schedule in the text. Instead, say "I've generated your schedule, click 'View Schedule' to see it."
+- IMPORTANT: Use AM/PM format (e.g., "7:00 PM") for all times, NOT military time.
+- IMPORTANT: At the very end of your response, strictly output the schedule as a JSON array inside a \`\`\`json block.
+- Format:
+\`\`\`json
+[
+  { "time": "hh:mm start - hh:mm end", "activity": "Title", "description": "Short description" }
+]
+\`\`\`
 Goal: A complete, optimized itinerary plan.
         `;
 
-        const userMessage = { role: 'user', content: prompt };
-        setMessages(prev => [...prev, userMessage]);
+        // Show simple message to user
+        const simpleUserMessage = { role: 'user', content: "Can you generate a schedule for me?" };
+        setMessages(prev => [...prev, simpleUserMessage]);
 
-        // Ensure the prompt is sent to the AI
-        sendToAI([...messages, userMessage]);
+        // Send FULL prompt to AI (but keep simple message in UI history)
+        // We temporarily append the complex prompt to the message history sent to AI, 
+        // but don't add it to the 'messages' state that is rendered.
+        // Actually, to make 'sendToAI' work with the current 'messages' state, we need to handle this carefully.
+        // The sendToAI function takes 'messagesToSend'. We can construct that manually.
+
+        const complexMessage = { role: 'user', content: prompt };
+        sendToAI([...messages, complexMessage]);
         setTimeout(() => scrollToBottom(), 200);
     };
 
@@ -739,7 +787,25 @@ Goal: A complete, optimized itinerary plan.
                     // Just check
                 }
 
-                assistantMessage.content = cleanDisplayText(fullResponse);
+                // Extract JSON schedule if present
+                const jsonMatch = fullResponse.match(/```json\s*(\[\s*\{[\s\S]*\}\s*\])\s*```/);
+                if (jsonMatch) {
+                    try {
+                        const jsonContent = jsonMatch[1];
+                        const parsedSchedule = JSON.parse(jsonContent);
+                        if (Array.isArray(parsedSchedule)) {
+                            setSchedule(parsedSchedule);
+                            isDirtyRef.current = true;
+                            // Remove the JSON block from the displayed message
+                            assistantMessage.content = cleanDisplayText(fullResponse.replace(jsonMatch[0], '').trim());
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse AI schedule JSON', e);
+                        assistantMessage.content = cleanDisplayText(fullResponse);
+                    }
+                } else {
+                    assistantMessage.content = cleanDisplayText(fullResponse);
+                }
 
                 setMessages(prev => {
                     const updated = [...prev];
@@ -766,11 +832,32 @@ Goal: A complete, optimized itinerary plan.
         e.preventDefault();
         if (!input.trim() || isLoading) return;
 
+        isDirtyRef.current = true;
         const userMessage = { role: 'user', content: input };
         const newMessages = [...messages, userMessage];
 
         setMessages(newMessages);
         setInput('');
+
+        // --- Automate Filter Triggers based on user input ---
+        const lowerInput = input.toLowerCase();
+
+        // 1. Explore Automation
+        if (lowerInput.includes('explore') || (lowerInput.includes('find') && (lowerInput.includes('activity') || lowerInput.includes('things to do')))) {
+            setWaitingForConfirmation('explore_filters');
+            setExploreFilters(prev => ({ ...prev, locationPreference: 'venue', radius: 8000, activity: '' }));
+        }
+        // 2. Hotels Automation
+        else if (lowerInput.includes('find') && (lowerInput.includes('hotel') || lowerInput.includes('lodging'))) {
+            setWaitingForConfirmation('hotels_filters');
+            setIsHotelsExpanded(true);
+        }
+        // 3. Food Automation
+        else if (lowerInput.includes('find') && (lowerInput.includes('food') || lowerInput.includes('restaurant'))) {
+            setWaitingForConfirmation('food_filters');
+            setFoodFilters(prev => ({ ...prev, locationPreference: 'venue', radius: 1600, cuisine: '' }));
+        }
+
         sendToAI(newMessages);
     };
 
@@ -780,7 +867,7 @@ Goal: A complete, optimized itinerary plan.
             // handleQuickReply("Yes, please find hotels."); // Optional: verify filters
         } else {
             setWaitingForConfirmation(null);
-            handleQuickReply("No, I'm good on hotels.");
+            handleQuickReply("No thanks. (If you change your mind, just click 'Find Hotels' or type 'find hotels'.)");
         }
     };
 
@@ -1532,7 +1619,69 @@ Goal: A complete, optimized itinerary plan.
                                 >
                                     ✨ Generate Schedule
                                 </button>
+                                {schedule.length > 0 && (
+                                    <button
+                                        onClick={() => setIsScheduleOpen(true)}
+                                        className="text-xs font-bold text-emerald-700 bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-full hover:bg-emerald-200 shadow-sm transition-all flex items-center gap-1 active:scale-95 ml-2"
+                                    >
+                                        👁️ View Schedule
+                                    </button>
+                                )}
                             </div>
+
+                            {/* Schedule Popup Modal */}
+                            {isScheduleOpen && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
+                                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden border border-gray-200 dark:border-gray-700">
+                                        <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
+                                            <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                                                🗓️ Trip Schedule
+                                            </h3>
+                                            <button
+                                                onClick={() => setIsScheduleOpen(false)}
+                                                className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                        <div className="p-6 overflow-y-auto space-y-6">
+                                            {schedule.map((item, i) => (
+                                                <div key={i} className="flex gap-4 relative">
+                                                    {/* Timeline Line */}
+                                                    {i !== schedule.length - 1 && (
+                                                        <div className="absolute left-[85px] top-8 bottom-[-24px] w-0.5 bg-gray-200 dark:bg-gray-700"></div>
+                                                    )}
+
+                                                    <div className="w-[85px] flex-shrink-0 text-right">
+                                                        <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 block pt-1">
+                                                            {item.time.split('-')[0].trim()}
+                                                        </span>
+                                                        <span className="text-xs text-gray-400">
+                                                            {item.time.split('-')[1]?.trim() || ''}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="flex-1 bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-100 dark:border-gray-700 hover:border-emerald-200 dark:hover:border-emerald-800 transition-colors">
+                                                        <h4 className="font-bold text-gray-800 dark:text-gray-100 mb-1">{item.activity}</h4>
+                                                        <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">{item.description}</p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 text-center">
+                                            <button
+                                                onClick={() => {
+                                                    setIsScheduleOpen(false);
+                                                    handleItinerarySubmission();
+                                                }}
+                                                className="text-sm font-semibold text-emerald-600 hover:text-emerald-700 flex items-center justify-center gap-2 mx-auto"
+                                            >
+                                                ↻ Regenerate Schedule
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             <div className="space-y-2">
                                 {selectedEvent && (
                                     <div className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
