@@ -19,8 +19,8 @@ export default async function LoginPage() {
     // Diamond grid parameters
     const rows = 5;
     const cols = 25;
-    const diamondSize = 100;
-    const gap = 12;
+    const diamondSize = 70;
+    const gap = 10;
 
     return (
         <div className="min-h-screen w-full flex flex-col bg-white dark:bg-gray-900">
