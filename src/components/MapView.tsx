@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { importLibrary, setOptions } from '@googlemaps/js-api-loader';
 
 interface MapViewProps {
     center?: { lat: number; lng: number };
@@ -114,16 +113,21 @@ export default function MapView({
 
     useEffect(() => {
         const initMap = async () => {
-            // Configure the loader
-            setOptions({
-                apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY as string,
-                version: 'weekly',
-                libraries: ['places']
-            });
-
             try {
-                // Import the Maps library using the functional API
+                // Use dynamic import for the loader functions
+                const { setOptions, importLibrary } = await import('@googlemaps/js-api-loader');
+
+                // Configure the loader options
+                setOptions({
+                    apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY as string,
+                    version: 'weekly',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any);
+
+                // Import the Maps library
                 const { Map } = await importLibrary('maps') as google.maps.MapsLibrary;
+                // Also import places library for future use
+                await importLibrary('places');
 
                 // Use selected event location if available, otherwise default center
                 const initialCenter = selectedEvent?.location || center;
@@ -131,7 +135,6 @@ export default function MapView({
                 const newMap = new Map(mapRef.current as HTMLElement, {
                     center: initialCenter,
                     zoom: zoom,
-                    // mapId: 'DEMO_MAP_ID', // Removed to fix ApiProjectMapError
                     disableDefaultUI: false,
                     zoomControl: true,
                     streetViewControl: false,

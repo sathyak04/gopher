@@ -70,6 +70,7 @@ export async function getChat(chatId: string) {
     }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function saveChat(chatId: string, title: string, msgs: any[], data: any, isPinned?: boolean) {
     console.log(`[saveChat] Saving for ${chatId}, title: ${title}, keys: ${Object.keys(data)}`);
     const session = await auth()

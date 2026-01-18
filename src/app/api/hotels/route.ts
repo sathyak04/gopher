@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
         }
 
         const hotelsData = await hotelsResponse.json();
-        const hotelIds = hotelsData.data?.slice(0, 10).map((h: any) => h.hotelId) || [];
+        const hotelIds = hotelsData.data?.slice(0, 10).map((h: any) => h.hotelId) || []; // eslint-disable-line @typescript-eslint/no-explicit-any
 
         if (hotelIds.length === 0) {
             return NextResponse.json({ hotels: [], message: 'No hotels found in this area' });
@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
             console.error('Hotel offers error:', error);
             // Return hotels without prices if offers fail
             return NextResponse.json({
-                hotels: hotelsData.data.slice(0, 10).map((h: any) => ({
+                hotels: hotelsData.data.slice(0, 10).map((h: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
                     id: h.hotelId,
                     name: h.name,
                     address: h.address?.countryCode || '',
@@ -114,7 +114,7 @@ export async function GET(req: NextRequest) {
         console.log('Hotel offers data sample:', JSON.stringify(offersData.data?.[0], null, 2));
 
         // Transform to our format
-        const hotels = (offersData.data || []).map((hotel: any) => {
+        const hotels = (offersData.data || []).map((hotel: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
             const offer = hotel.offers?.[0];
             const price = offer?.price?.total;
             // Amadeus returns star rating (1-5), not user ratings
@@ -142,7 +142,7 @@ export async function GET(req: NextRequest) {
         });
 
         return NextResponse.json({ hotels });
-    } catch (error: any) {
+    } catch (error: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
         console.error('Error fetching hotels:', error);
         return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
     }

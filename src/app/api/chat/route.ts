@@ -50,11 +50,11 @@ IMPORTANT:
 - NEVER ask "what event" after the user just selected one.
 - You can search for restaurants OR hotels in any order.
 - ALWAYS include [FIND_PLACES: ...] when preferences are given.`,
-      messages: messages.map((m: any) => ({ role: m.role, content: m.content })),
+      messages: messages.map((m: any) => ({ role: m.role, content: m.content })), // eslint-disable-line @typescript-eslint/no-explicit-any
     });
 
     return result.toTextStreamResponse();
-  } catch (error: any) {
+  } catch (error: any) { // eslint-disable-next-line @typescript-eslint/no-explicit-any
     console.error('API ROUTE ERROR:', error);
     return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500 });
   }

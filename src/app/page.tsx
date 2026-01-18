@@ -17,6 +17,7 @@ export default function Home() {
         const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
         if (savedTheme === 'dark' || (!savedTheme && systemDark)) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setIsDarkMode(true);
             document.documentElement.classList.add('dark');
         } else {
@@ -41,6 +42,7 @@ export default function Home() {
 
     useEffect(() => {
         // Initialize or load session
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSessionId(crypto.randomUUID());
     }, []);
 

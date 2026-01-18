@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Transform results
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const distances = data.rows[0].elements.map((element: any, index: number) => ({
             id: destinations[index].id,
             distance: element.distance?.text || 'N/A',

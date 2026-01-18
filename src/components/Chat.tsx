@@ -700,7 +700,8 @@ export default function Chat({ sessionId, isSidebarOpen, isDarkMode, openSchedul
                 : 'types' in item && item.types.includes('restaurant')
                     ? 'Restaurant'
                     : 'Activity';
-            return `${index + 1}. ${item.name} (${type}) - ${item.address || 'No address'}`;
+            const address = 'address' in item ? item.address : ('venue' in item ? item.venue : 'No address');
+            return `${index + 1}. ${item.name} (${type}) - ${address || 'No address'}`;
         }).join('\n');
 
         const prompt = `
@@ -1144,7 +1145,7 @@ Goal: A complete, optimized itinerary plan.
                     )}
 
                     {/* ----- HOTELS SECTION (Show only when not in food or explore mode) ----- */}
-                    {hotelResults.length > 0 && !['food', 'food_filters', 'explore', 'explore_filters'].includes(waitingForConfirmation) && (
+                    {hotelResults.length > 0 && (!waitingForConfirmation || !['food', 'food_filters', 'explore', 'explore_filters'].includes(waitingForConfirmation)) && (
                         <div className="mb-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                             <div className="bg-gray-50 dark:bg-gray-800 p-3 flex justify-between items-center border-b border-gray-200 dark:border-gray-700">
                                 <h3 className="font-bold text-gray-700 dark:text-gray-200 flex items-center gap-2">
@@ -1234,7 +1235,7 @@ Goal: A complete, optimized itinerary plan.
                     )}
 
                     {/* ----- RESTAURANTS SECTION (Show only when not in hotel or explore mode) ----- */}
-                    {restaurantResults.length > 0 && !['hotels', 'hotels_filters', 'explore', 'explore_filters'].includes(waitingForConfirmation) && (
+                    {restaurantResults.length > 0 && (!waitingForConfirmation || !['hotels', 'hotels_filters', 'explore', 'explore_filters'].includes(waitingForConfirmation)) && (
                         <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                             <div className="bg-gray-50 dark:bg-gray-800 p-3 flex justify-between items-center border-b border-gray-200 dark:border-gray-700">
                                 <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
@@ -1260,7 +1261,7 @@ Goal: A complete, optimized itinerary plan.
                     )}
 
                     {/* ----- EXPLORE SECTION (Show only when in explore mode) ----- */}
-                    {exploreResults.length > 0 && ['explore', 'explore_filters', null].includes(waitingForConfirmation) && (
+                    {exploreResults.length > 0 && (waitingForConfirmation === null || waitingForConfirmation === 'explore' || waitingForConfirmation === 'explore_filters') && (
                         <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                             <div className="bg-gray-50 dark:bg-gray-800 p-3 flex justify-between items-center border-b border-gray-200 dark:border-gray-700">
                                 <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
@@ -1707,7 +1708,7 @@ Goal: A complete, optimized itinerary plan.
                                     return (
                                         <div key={idx} className="flex items-center gap-2 p-2 rounded border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
                                             <span className="text-lg">
-                                                {getPlaceEmoji(item.types)}
+                                                {getPlaceEmoji('types' in item ? item.types : [])}
                                             </span>
                                             <div className="flex-1">
                                                 <p className="font-semibold text-sm text-gray-800 dark:text-gray-100">{item.name}</p>

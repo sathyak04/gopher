@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
         }
 
         // Extract relevant event information
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const events = data._embedded?.events?.map((event: any) => {
             const venue = event._embedded?.venues?.[0];
             return {
@@ -40,6 +41,7 @@ export async function GET(req: NextRequest) {
                     lat: parseFloat(venue.location.latitude),
                     lng: parseFloat(venue.location.longitude),
                 } : null,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 image: event.images?.find((img: any) => img.ratio === '16_9' && img.width > 500)?.url
                     || event.images?.[0]?.url
                     || '',

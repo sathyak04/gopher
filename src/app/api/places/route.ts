@@ -46,7 +46,9 @@ export async function GET(req: NextRequest) {
         }
 
         // Filter and transform results
+        // Filter and transform results
         const places = (data.results || [])
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             .filter((place: any) => {
                 // Filter by rating
                 if (minRating > 0 && (!place.rating || place.rating < minRating)) {
@@ -59,6 +61,7 @@ export async function GET(req: NextRequest) {
                 return true;
             })
             .slice(0, 10) // Limit to 10 results
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             .map((place: any) => ({
                 id: place.place_id,
                 name: place.name,
