@@ -19,7 +19,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, currentSessionId, onSelectSession, onNewChat, onViewSchedule }) => {
-    const { data: session } = useSession()
+    const { data: session, status } = useSession()
     const [sessions, setSessions] = useState<ChatSession[]>([]);
     const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -45,32 +45,46 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, currentSessionId, onSelectSes
         }
     }, [editingId]);
 
+    const loadLocalSessions = () => {
+        const allKeys = Object.keys(localStorage);
+        const sessionKeys = allKeys.filter(k => k.startsWith('chat_session_'));
+        const loadedSessions = sessionKeys.map(key => {
+            try {
+                const data = JSON.parse(localStorage.getItem(key) || '{}');
+                return {
+                    id: key.replace('chat_session_', ''),
+                    preview: data.preview || 'New Chat',
+                    timestamp: data.timestamp || 0,
+                    isPinned: data.isPinned || false
+                };
+            } catch (e) {
+                return null;
+            }
+        }).filter(Boolean) as ChatSession[];
+
+        loadedSessions.sort((a, b) => {
+            if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+            return b.timestamp - a.timestamp;
+        });
+        setSessions(loadedSessions);
+    };
+
     const loadSessions = async () => {
         if (session?.user) {
             const dbChats = await getChats();
             setSessions(dbChats);
         } else {
-            const allKeys = Object.keys(localStorage);
-            const sessionKeys = allKeys.filter(k => k.startsWith('chat_session_'));
-            const loadedSessions = sessionKeys.map(key => {
-                try {
-                    const data = JSON.parse(localStorage.getItem(key) || '{}');
-                    return {
-                        id: key.replace('chat_session_', ''),
-                        preview: data.preview || 'New Chat',
-                        timestamp: data.timestamp || 0,
-                        isPinned: data.isPinned || false
-                    };
-                } catch (e) {
-                    return null;
-                }
-            }).filter(Boolean) as ChatSession[];
+            // If logged out (or pure guest mode), clear any potentially stale DB sessions first
+            // But wait, if guest mode is intended, we should load local storage.
+            // The issue is transition.
 
-            loadedSessions.sort((a, b) => {
-                if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-                return b.timestamp - a.timestamp;
-            });
-            setSessions(loadedSessions);
+            // Explicitly clearer logic:
+            if (status === 'unauthenticated') {
+                // Pure guest mode - load local storage
+                // loadLocalSessions(); 
+            } else if (status === 'loading') {
+                // Do nothing, wait
+            }
         }
     };
 
@@ -86,7 +100,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, currentSessionId, onSelectSes
         }
 
         return () => window.removeEventListener('storage', handleStorageChange);
-    }, [isOpen, session]);
+    }, [isOpen, session, status]);
+
+    useEffect(() => {
+        if (status === 'unauthenticated') {
+            setSessions([]);
+        }
+    }, [status]);
 
     const handleDelete = async (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
@@ -252,13 +272,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, currentSessionId, onSelectSes
                     {session?.user ? (
                         <div className="flex items-center gap-3 px-2 pb-2">
                             {/* Just show who is logged in context, but no buttons */}
-                            {session.user.image ? (
-                                <img src={session.user.image} alt="Avatar" className="w-8 h-8 rounded-full" />
-                            ) : (
-                                <div className="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-xs">
-                                    {session.user.name?.[0] || 'U'}
-                                </div>
-                            )}
+                            <div className="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-xs text-white font-bold">
+                                {session.user.name?.[0] || 'U'}
+                            </div>
                             <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium truncate text-emerald-100">{session.user.name}</p>
                             </div>

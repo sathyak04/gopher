@@ -5,11 +5,14 @@ import { auth } from "@/auth"
 import { db } from "@/db"
 import { chats, messages } from "@/db/schema"
 import { eq, desc, and } from "drizzle-orm"
-import { revalidatePath } from "next/cache"
+import { revalidatePath, unstable_noStore as noStore } from "next/cache"
 
 export async function getChats() {
+    noStore();
     const session = await auth()
     if (!session?.user?.id) return []
+
+    console.log(`[getChats] Fetching chats for user: ${session.user.id} (${session.user.email})`);
 
     const userChats = await db.select()
         .from(chats)
@@ -71,6 +74,7 @@ export async function saveChat(chatId: string, title: string, msgs: any[], data:
     console.log(`[saveChat] Saving for ${chatId}, title: ${title}, keys: ${Object.keys(data)}`);
     const session = await auth()
     if (!session?.user?.id) return { error: "Not authenticated" }
+    console.log(`[saveChat] Saving chat ${chatId} for user: ${session.user.id} (${session.user.email})`);
 
     // Upsert Chat
     // Check if exists
