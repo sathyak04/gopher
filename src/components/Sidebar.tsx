@@ -179,7 +179,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, currentSessionId, onSelectSes
                     onClick={onNewChat}
                     className="w-full bg-emerald-600 hover:bg-emerald-500 dark:bg-emerald-800 dark:hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors mb-6 shadow-md"
                 >
-                    <span>➕</span> New Chat
+                    <span className="text-xl leading-none mb-1">+</span> New Chat
                 </button>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar pb-20">

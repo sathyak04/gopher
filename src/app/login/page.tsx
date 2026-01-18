@@ -4,6 +4,10 @@ import AnimatedDiamondGrid from "@/components/AnimatedDiamondGrid"
 import GopherLogo from "@/components/GopherLogo"
 import LoginNavbar from "@/components/LoginNavbar"
 
+export const metadata = {
+    title: "Gopher - Login",
+}
+
 export default async function LoginPage() {
     const session = await auth()
 
