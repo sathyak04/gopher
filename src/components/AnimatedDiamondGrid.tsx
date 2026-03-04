@@ -123,8 +123,8 @@ export default function AnimatedDiamondGrid({ rows, cols, diamondSize, gap }: An
 
             const centerRow = (rows - 1) / 2;
             const distFromCenter = Math.abs(row - centerRow);
-            // Lower opacity overall - 60% max
-            const baseOpacity = Math.max(0.2, 0.6 - distFromCenter * 0.12);
+            // Lower opacity overall - 15% max to make it less green and more transparent
+            const baseOpacity = Math.max(0.04, 0.15 - distFromCenter * 0.05);
 
             diamonds.push({ x, y, baseOpacity, index: index++ });
         }

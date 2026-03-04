@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { useSession } from "next-auth/react"
 import { getChat, saveChat } from "@/app/actions"
 import MapView from './MapView';
+import { MapPin } from 'lucide-react';
 
 interface Event {
     id: string;
@@ -35,7 +36,7 @@ interface Place {
 }
 
 const getPlaceEmoji = (types: string[] = []) => {
-    if (!types) return '📍';
+    if (!types) return <MapPin className="w-[1em] h-[1em] inline" />;
     if (types.includes('lodging') || types.includes('hotel')) return '🏨';
     if (types.includes('restaurant') || types.includes('food') || types.includes('meal_takeaway') || types.includes('cafe')) return '🍽️';
     if (types.includes('park') || types.includes('campground') || types.includes('natural_feature')) return '🌳';
@@ -45,7 +46,7 @@ const getPlaceEmoji = (types: string[] = []) => {
     if (types.includes('night_club') || types.includes('bar')) return '🍸';
     if (types.includes('spa') || types.includes('gym') || types.includes('health')) return '💆';
     if (types.includes('tourist_attraction')) return '📸';
-    return '📍';
+    return <MapPin className="w-[1em] h-[1em] inline" />;
 };
 
 const PlaceImage = ({ place }: { place: Place }) => {
@@ -877,7 +878,8 @@ Goal: A complete, optimized itinerary plan.
     };
 
     const executeFilteredSearch = () => {
-        setWaitingForConfirmation(null);
+        // Keep waitingForConfirmation as 'hotels_filters' so the map continues to display results
+        // setWaitingForConfirmation(null); // Removed - this was preventing hotels from showing on map
 
         // Add User Message for context
         const filterMsg = `Searching for hotels: ${(hotelFilters.radius / 1600).toFixed(0)} mi radius`;
@@ -907,6 +909,7 @@ Goal: A complete, optimized itinerary plan.
             {placesList.map((place) => {
                 return (
                     <div
+                        id={`place-card-${place.id}`}
                         key={place.id}
                         onClick={() => handlePlaceSelect(place)}
                         onDoubleClick={() => handlePlaceConfirm(place)}
@@ -928,7 +931,7 @@ Goal: A complete, optimized itinerary plan.
                                 )}
                             </div>
 
-                            <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-1">📍 {place.address || 'Address N/A'}</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-1"><MapPin className="w-4 h-4 inline mr-1" /> {place.address || 'Address N/A'}</p>
 
                             {isHotel && (
                                 <a
@@ -1044,20 +1047,34 @@ Goal: A complete, optimized itinerary plan.
                         {messages.length === 0 && (
                             <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 dark:text-gray-400 py-8">
                                 <div className="mb-4 animate-bounce-slow">
-                                    {/* Simple Gopher Icon */}
                                     <svg width="80" height="80" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                        {/* Head/Body */}
-                                        <rect x="25" y="30" width="50" height="70" rx="25" fill="#10B981" />
                                         {/* Ears */}
-                                        <circle cx="25" cy="40" r="10" fill="#10B981" />
-                                        <circle cx="25" cy="40" r="5" fill="#A7F3D0" />
-                                        <circle cx="75" cy="40" r="10" fill="#10B981" />
-                                        <circle cx="75" cy="40" r="5" fill="#A7F3D0" />
-                                        {/* Face Details */}
-                                        <circle cx="40" cy="55" r="4" fill="#064E3B" />
-                                        <circle cx="60" cy="55" r="4" fill="#064E3B" />
-                                        <ellipse cx="50" cy="65" rx="8" ry="5" fill="#047857" />
-                                        <rect x="46" y="68" width="8" height="6" rx="1" fill="white" />
+                                        <circle cx="20" cy="35" r="14" fill="#10B981" />
+                                        <circle cx="80" cy="35" r="14" fill="#10B981" />
+                                        <circle cx="20" cy="35" r="6" fill="#047857" />
+                                        <circle cx="80" cy="35" r="6" fill="#047857" />
+
+                                        {/* Body/Head */}
+                                        <path d="M 25 55 C 25 10, 75 10, 75 55 L 75 85 C 75 95, 65 100, 50 100 C 35 100, 25 95, 25 85 Z" fill="#10B981" />
+
+                                        {/* Eyes */}
+                                        <circle cx="38" cy="45" r="4.5" fill="#064E3B" />
+                                        <circle cx="62" cy="45" r="4.5" fill="#064E3B" />
+                                        {/* Eye highlights */}
+                                        <circle cx="36" cy="43.5" r="1.5" fill="#FFFFFF" />
+                                        <circle cx="60" cy="43.5" r="1.5" fill="#FFFFFF" />
+
+                                        {/* Cheeks */}
+                                        <ellipse cx="40" cy="62" rx="14" ry="10" fill="#34D399" />
+                                        <ellipse cx="60" cy="62" rx="14" ry="10" fill="#34D399" />
+
+                                        {/* Teeth */}
+                                        <rect x="44" y="68" width="5" height="10" rx="1" fill="#FFFFFF" />
+                                        <rect x="51" y="68" width="5" height="10" rx="1" fill="#FFFFFF" />
+                                        <line x1="50" y1="68" x2="50" y2="78" stroke="#D1D5DB" strokeWidth="0.5" />
+
+                                        {/* Nose */}
+                                        <ellipse cx="50" cy="56" rx="6" ry="3.5" fill="#064E3B" />
                                     </svg>
                                 </div>
                                 <p className="text-lg font-medium text-gray-700 dark:text-gray-200">Tell me about an event or artist you want to see!</p>
@@ -1114,6 +1131,7 @@ Goal: A complete, optimized itinerary plan.
                             <div className="grid grid-cols-1 gap-4">
                                 {events.map((event) => (
                                     <div
+                                        id={`event-card-${event.id}`}
                                         key={event.id}
                                         onClick={() => handleEventSelect(event)}
                                         onDoubleClick={() => handleEventConfirm(event)}
@@ -1127,7 +1145,7 @@ Goal: A complete, optimized itinerary plan.
                                         <div className="p-3 flex-1 min-w-0">
                                             <h4 className="font-bold text-gray-800 dark:text-gray-100 truncate">{event.name}</h4>
                                             <p className="text-sm text-gray-600 dark:text-gray-300">📅 {formatDate(event.date)}</p>
-                                            <p className="text-sm text-gray-600 dark:text-gray-300">📍 {event.venue}</p>
+                                            <p className="text-sm text-gray-600 dark:text-gray-300"><MapPin className="w-4 h-4 inline mr-1" /> {event.venue}</p>
                                             <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{event.city}, {event.state}</p>
                                             <p className="text-sm font-semibold text-green-600 dark:text-green-400 mt-1">{event.priceRange}</p>
                                         </div>
@@ -1180,6 +1198,7 @@ Goal: A complete, optimized itinerary plan.
                                         if (!place) return null; // Safe check
                                         return (
                                             <div
+                                                id={`place-card-${place.id}`}
                                                 key={place.id}
                                                 onClick={() => handlePlaceSelect(place)}
                                                 onDoubleClick={() => handlePlaceConfirm(place)}
@@ -1204,7 +1223,7 @@ Goal: A complete, optimized itinerary plan.
                                                         )}
                                                     </div>
 
-                                                    <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-1">📍 {place.address || 'Address N/A'}</p>
+                                                    <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-1"><MapPin className="w-4 h-4 inline mr-1" /> {place.address || 'Address N/A'}</p>
 
                                                     <a
                                                         href={`https://www.google.com/search?q=${encodeURIComponent(place.name + ' ' + (place.address || '') + ' reviews')}`}
@@ -1359,7 +1378,7 @@ Goal: A complete, optimized itinerary plan.
                                             onClick={() => setFoodFilters(prev => ({ ...prev, locationPreference: 'venue' }))}
                                             className={`flex-1 py-1 rounded-md text-sm font-bold transition-colors ${foodFilters.locationPreference === 'venue' ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
                                         >
-                                            📍 Near Venue
+                                            <MapPin className="w-4 h-4 inline mr-1" /> Near Venue
                                         </button>
                                         <button
                                             onClick={() => setFoodFilters(prev => ({ ...prev, locationPreference: 'hotel' }))}
@@ -1483,7 +1502,7 @@ Goal: A complete, optimized itinerary plan.
                                             onClick={() => setExploreFilters(prev => ({ ...prev, locationPreference: 'venue' }))}
                                             className={`flex-1 py-1 rounded-md text-sm font-bold transition-colors ${exploreFilters.locationPreference === 'venue' ? 'bg-purple-500 text-white shadow-sm' : 'text-gray-500 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'}`}
                                         >
-                                            📍 Near Venue
+                                            <MapPin className="w-4 h-4 inline mr-1" /> Near Venue
                                         </button>
                                         <button
                                             onClick={() => setExploreFilters(prev => ({ ...prev, locationPreference: 'hotel' }))}
@@ -1609,7 +1628,23 @@ Goal: A complete, optimized itinerary plan.
                         selectedEvent={selectedEvent}
                         selectedPlace={selectedPlace}
                         itinerary={itinerary}
-                        onSelectPlace={handlePlaceSelect}
+                        highlightedEventId={highlightedEventId}
+                        onSelectPlace={(place) => {
+                            handlePlaceSelect(place);
+                            // Scroll to the place card in the chat
+                            const placeCard = document.getElementById(`place-card-${place.id}`);
+                            if (placeCard) {
+                                placeCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                        }}
+                        onSelectEvent={(event) => {
+                            handleEventSelect(event);
+                            // Scroll to the event card in the chat
+                            const eventCard = document.getElementById(`event-card-${event.id}`);
+                            if (eventCard) {
+                                eventCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                        }}
                         isDarkMode={isDarkMode}
                     />
                 </div>
